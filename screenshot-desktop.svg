@@ -1,0 +1,29 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="rgb(26, 26, 26)" />
+  <g transform="translate(640, 360) scale(1.5) translate(-100, -100)">
+    <defs>
+      <linearGradient id="gradRed" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#ff4d4d" />
+        <stop offset="100%" stop-color="#b30000" />
+      </linearGradient>
+      <linearGradient id="gradBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#4da6ff" />
+        <stop offset="100%" stop-color="#0066cc" />
+      </linearGradient>
+    </defs>
+    <circle cx="100" cy="100" r="95" fill="#f0f0f0" stroke="#ddd" stroke-width="2" />
+    <g transform="translate(60, 80)">
+      <circle cx="0" cy="0" r="35" fill="url(#gradRed)" />
+      <path d="M-20,-10 Q0,-25 20,-10" stroke="rgba(255,255,255,0.3)" stroke-width="2" fill="none" />
+      <path d="M-25,0 Q0,-15 25,0" stroke="rgba(255,255,255,0.3)" stroke-width="2" fill="none" />
+    </g>
+    <g transform="translate(130, 110)">
+      <circle cx="0" cy="0" r="35" fill="url(#gradBlue)" />
+      <path d="M-20,-10 Q0,-25 20,-10" stroke="rgba(255,255,255,0.3)" stroke-width="2" fill="none" />
+      <path d="M-25,0 Q0,-15 25,0" stroke="rgba(255,255,255,0.3)" stroke-width="2" fill="none" />
+    </g>
+    <circle cx="100" cy="125" r="12" fill="#FFD700" stroke="#B8860B" stroke-width="1" />
+    <path d="M40,160 Q100,180 160,160" stroke="#ccc" stroke-width="3" fill="none" stroke-linecap="round" />
+  </g>
+  <text x="640" y="550" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="white" text-anchor="middle" letter-spacing="4">PASTIS AND POINTS</text>
+</svg>

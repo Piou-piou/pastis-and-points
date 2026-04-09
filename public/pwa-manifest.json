@@ -41,15 +41,15 @@
   ],
   "screenshots": [
     {
-      "src": "assets/splash-icon.png",
-      "sizes": "1024x1024",
+      "src": "assets/screenshot-desktop.png",
+      "sizes": "1280x720",
       "type": "image/png",
       "form_factor": "wide",
       "label": "Pastis and Points Desktop"
     },
     {
-      "src": "assets/splash-icon.png",
-      "sizes": "1024x1024",
+      "src": "assets/screenshot-mobile.png",
+      "sizes": "720x1280",
       "type": "image/png",
       "label": "Pastis and Points Mobile"
     }
