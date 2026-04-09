@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView } from 'react-native';
 import { GameMode } from '../types/game';
+import Logo from '../components/Logo';
 
 interface HomeScreenProps {
   onStartGame: (mode: GameMode) => void;
@@ -10,22 +11,21 @@ export default function HomeScreen({ onStartGame }: HomeScreenProps) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>Pastis and Points</Text>
-        <Text style={styles.subtitle}>Choisissez votre mode de jeu</Text>
+        <View style={styles.logoContainer}>
+          <Logo size={220} />
+        </View>
         
-        <TouchableOpacity 
-          style={styles.button} 
-          onPress={() => onStartGame('1vs1')}
-        >
-          <Text style={styles.buttonText}>1 vs 1 (Joueurs)</Text>
-        </TouchableOpacity>
-
+        <Text style={styles.title}>Pastis and Points</Text>
+        <Text style={styles.subtitle}>Le compagnon de vos mènes</Text>
+        
         <TouchableOpacity 
           style={styles.button} 
           onPress={() => onStartGame('2vs2')}
         >
-          <Text style={styles.buttonText}>Équipe vs Équipe</Text>
+          <Text style={styles.buttonText}>Lancer la partie</Text>
         </TouchableOpacity>
+        
+        <Text style={styles.footerText}>Version 1.0.0</Text>
       </View>
     </SafeAreaView>
   );
@@ -42,34 +42,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  logoContainer: {
+    marginBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 10,
+  },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
+    fontSize: 38,
+    fontWeight: '900',
+    color: '#2C3E50',
+    marginBottom: 8,
+    textAlign: 'center',
+    letterSpacing: -1,
   },
   subtitle: {
     fontSize: 18,
-    color: '#666',
-    marginBottom: 40,
+    color: '#7F8C8D',
+    marginBottom: 60,
+    fontWeight: '500',
   },
   button: {
-    backgroundColor: '#2C3E50',
-    paddingVertical: 15,
-    paddingHorizontal: 40,
-    borderRadius: 12,
+    backgroundColor: '#27AE60',
+    paddingVertical: 18,
+    paddingHorizontal: 50,
+    borderRadius: 50,
     width: '100%',
     alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowColor: '#27AE60',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   buttonText: {
     color: '#FFF',
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
+  footerText: {
+    position: 'absolute',
+    bottom: 30,
+    color: '#BDC3C7',
+    fontSize: 12,
+  }
 });
