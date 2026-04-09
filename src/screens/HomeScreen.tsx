@@ -34,7 +34,7 @@ export default function HomeScreen({ onStartGame }: HomeScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#000',
   },
   content: {
     flex: 1,
@@ -44,23 +44,23 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     marginBottom: 40,
-    shadowColor: '#000',
+    shadowColor: '#fff',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.1,
     shadowRadius: 15,
     elevation: 10,
   },
   title: {
     fontSize: 38,
     fontWeight: '900',
-    color: '#2C3E50',
+    color: '#FFF',
     marginBottom: 8,
     textAlign: 'center',
     letterSpacing: -1,
   },
   subtitle: {
     fontSize: 18,
-    color: '#7F8C8D',
+    color: '#BDC3C7',
     marginBottom: 60,
     fontWeight: '500',
   },
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   footerText: {
     position: 'absolute',
     bottom: 30,
-    color: '#BDC3C7',
+    color: '#555',
     fontSize: 12,
   }
 });

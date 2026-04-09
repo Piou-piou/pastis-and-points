@@ -29,7 +29,21 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "display": "standalone",
+      "themeColor": "#000000",
+      "backgroundColor": "#000000",
+      "lang": "fr-FR",
+      "description": "Le compagnon de vos mènes à la pétanque",
+      "name": "Pastis and Points",
+      "shortName": "PastisPoints",
+      "startUrl": "/",
+      "splash": {
+        "image": "./assets/splash-icon.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#000000"
+      }
     },
     "extra": {
       "eas": {

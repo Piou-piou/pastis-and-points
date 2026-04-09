@@ -39,7 +39,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
     <View style={styles.container}>
       <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
         <Logo size={220} />
-        <Text style={styles.title}>Pétanque Master</Text>
+        <Text style={styles.title}>Pastis and Points</Text>
       </Animated.View>
     </View>
   );
