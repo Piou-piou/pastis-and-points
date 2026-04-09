@@ -3,23 +3,41 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Pastis and Points</title>
-    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="pwa-manifest.json" crossorigin="anonymous" />
+    
+    <!-- Theme & Colors -->
     <meta name="theme-color" content="#000000" />
-    <meta name="description" content="Le compagnon de vos mènes à la pétanque" />
-    <link rel="shortcut icon" href="/assets/favicon.png" />
-
-    <!-- Apple Touch Icon -->
-    <link rel="apple-touch-icon" href="/assets/icon.png" />
-
+    <meta name="msapplication-TileColor" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PastisPoints" />
+    
+    <!-- Icons -->
+    <link rel="shortcut icon" href="assets/favicon.png" />
+    <link rel="apple-touch-icon" href="assets/icon.png" />
+    
     <style>
-      body {
+      html, body {
+        background-color: #000000 !important;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      #root {
         background-color: #000000;
+        height: 100%;
+        width: 100%;
       }
     </style>
   </head>
   <body>
-    <div id="root">jjjj</div>
+    <noscript>Veuillez activer JavaScript pour lancer l'application.</noscript>
+    <div id="root"></div>
   </body>
 </html>

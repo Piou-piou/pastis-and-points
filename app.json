@@ -38,7 +38,6 @@
       "description": "Le compagnon de vos mènes à la pétanque",
       "name": "Pastis and Points",
       "shortName": "PastisPoints",
-      "startUrl": "/",
       "splash": {
         "image": "./assets/splash-icon.png",
         "resizeMode": "contain",
