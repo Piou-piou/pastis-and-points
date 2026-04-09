@@ -26,8 +26,8 @@ export default function App() {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar style={currentScreen === 'splash' ? 'light' : 'auto'} />
+    <View style={[styles.container, { backgroundColor: 'rgb(26, 26, 26)' }]}>
+      <StatusBar style="light" />
       {currentScreen === 'splash' && <SplashScreen onFinish={handleSplashFinish} />}
       {currentScreen === 'home' && <HomeScreen onStartGame={handleStartGame} />}
       {currentScreen === 'game' && <GameScreen mode={gameMode} onQuit={handleQuitGame} />}
@@ -38,6 +38,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    width: '100%',
+    height: '100%',
   },
 });

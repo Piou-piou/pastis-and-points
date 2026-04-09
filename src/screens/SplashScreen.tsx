@@ -39,7 +39,9 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
     <View style={styles.container}>
       <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
         <Logo size={220} />
-        <Text style={styles.title}>Pastis and Points</Text>
+        <View style={styles.titleWrapper}>
+          <Text style={styles.title}>Pastis and Points</Text>
+        </View>
       </Animated.View>
     </View>
   );
@@ -48,15 +50,25 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: 'rgb(26, 26, 26)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    // Pour le web, on s'assure que la hauteur est bien 100% de la fenêtre
+    minHeight: '100%',
+    width: '100%',
+  },
+  content: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  content: {
+  titleWrapper: {
+    position: 'absolute',
+    top: '100%', // Positionné juste en dessous du logo
+    marginTop: 20,
+    width: 400,
     alignItems: 'center',
   },
   title: {
-    marginTop: 20,
     fontSize: 28,
     fontWeight: 'bold',
     color: '#fff',

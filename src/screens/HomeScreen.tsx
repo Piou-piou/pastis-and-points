@@ -24,7 +24,8 @@ export default function HomeScreen({ onStartGame }: HomeScreenProps) {
         >
           <Text style={styles.buttonText}>Lancer la partie</Text>
         </TouchableOpacity>
-        
+      </View>
+      <View style={styles.footer}>
         <Text style={styles.footerText}>Version 1.0.0</Text>
       </View>
     </SafeAreaView>
@@ -34,21 +35,17 @@ export default function HomeScreen({ onStartGame }: HomeScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: 'rgb(26, 26, 26)',
   },
   content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    paddingBottom: 80, // Space for the footer
   },
   logoContainer: {
     marginBottom: 40,
-    shadowColor: '#fff',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 15,
-    elevation: 10,
   },
   title: {
     fontSize: 38,
@@ -84,9 +81,14 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  footerText: {
+  footer: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 20,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  footerText: {
     color: '#555',
     fontSize: 12,
   }
