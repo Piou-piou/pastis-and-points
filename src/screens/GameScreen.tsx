@@ -45,6 +45,15 @@ export default function GameScreen({ mode, onQuit }: GameScreenProps) {
     }
   };
 
+  const decrementTotalScore = (team: 'red' | 'blue') => {
+    if (team === 'red') {
+      setRedTeam(prev => ({ ...prev, totalScore: Math.max(0, prev.totalScore - 1) }));
+    } else {
+      setBlueTeam(prev => ({ ...prev, totalScore: Math.max(0, prev.totalScore - 1) }));
+    }
+    setIsGameOver(false);
+  };
+
   const validateRound = () => {
     const newRedTotal = redTeam.totalScore + redTeam.roundScore;
     const newBlueTotal = blueTeam.totalScore + blueTeam.roundScore;
@@ -56,7 +65,8 @@ export default function GameScreen({ mode, onQuit }: GameScreenProps) {
       const winner = newRedTotal >= WINNING_SCORE ? redTeam.name : blueTeam.name;
       setIsGameOver(true);
       Alert.alert("Partie Terminée !", `${winner} a gagné la partie !`, [
-        { text: "Ok", onPress: onQuit }
+        { text: "Corriger", style: 'cancel' },
+        { text: "Menu Principal", onPress: onQuit }
       ]);
     }
   };
@@ -81,11 +91,15 @@ export default function GameScreen({ mode, onQuit }: GameScreenProps) {
 
       <View style={styles.scoreContainer}>
         <View style={styles.totalBoard}>
-          <Text style={[styles.totalScore, { color: redTeam.color }]}>{redTeam.totalScore}</Text>
+          <TouchableOpacity onLongPress={() => decrementTotalScore('red')} activeOpacity={0.6}>
+            <Text style={[styles.totalScore, { color: redTeam.color }]}>{redTeam.totalScore}</Text>
+          </TouchableOpacity>
           <Text style={styles.separator}>-</Text>
-          <Text style={[styles.totalScore, { color: blueTeam.color }]}>{blueTeam.totalScore}</Text>
+          <TouchableOpacity onLongPress={() => decrementTotalScore('blue')} activeOpacity={0.6}>
+            <Text style={[styles.totalScore, { color: blueTeam.color }]}>{blueTeam.totalScore}</Text>
+          </TouchableOpacity>
         </View>
-        <Text style={styles.targetScore}>Objectif: {WINNING_SCORE}</Text>
+        <Text style={styles.targetScore}>Objectif: {WINNING_SCORE} (Appui long pour corriger)</Text>
       </View>
 
       <View style={styles.gameArea}>
