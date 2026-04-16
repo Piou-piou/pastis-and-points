@@ -5,9 +5,11 @@ import Logo from '../components/Logo';
 
 interface HomeScreenProps {
   onStartGame: (mode: GameMode) => void;
+  onCreateTournament: () => void;
+  onJoinTournament: (id: string) => void;
 }
 
-export default function HomeScreen({ onStartGame }: HomeScreenProps) {
+export default function HomeScreen({ onStartGame, onCreateTournament, onJoinTournament }: HomeScreenProps) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -23,6 +25,13 @@ export default function HomeScreen({ onStartGame }: HomeScreenProps) {
           onPress={() => onStartGame('2vs2')}
         >
           <Text style={styles.buttonText}>Lancer la partie</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.button, styles.tournamentButton]} 
+          onPress={onCreateTournament}
+        >
+          <Text style={styles.buttonText}>Créer un concours</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.footer}>
@@ -73,6 +82,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
+    marginBottom: 20,
+  },
+  tournamentButton: {
+    backgroundColor: '#2980B9',
+    shadowColor: '#2980B9',
   },
   buttonText: {
     color: '#FFF',

@@ -1,18 +1,120 @@
 services:
+  # Application Petanque
   pastis-app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: pastis-and-points
     restart: always
+    environment:
+      - SUPABASE_URL=http://supabase-kong:8000
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
     networks:
       - proxy
+      - supabase-net
     labels:
       - "traefik.enable=true"
-      # Remplacez 'pastis.votre-domaine.com' par votre URL réelle
       - "traefik.http.routers.pastis.rule=Host(`pastis.dev-up.app`)"
       - "traefik.http.routers.pastis.entrypoints=https"
+
+  # --- Local Supabase Stack ---
+
+  supabase-db:
+    image: supabase/postgres:15.1.0.147
+    container_name: supabase-db
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "54322:5432"
+    networks:
+      - supabase-net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  supabase-kong:
+    image: kong:2.8.1
+    container_name: supabase-kong
+    restart: always
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+    volumes:
+      - ./supabase/volumes/api/kong.yml:/var/lib/kong/kong.yml:ro
+    ports:
+      - "54321:8000"
+    networks:
+      - supabase-net
+
+  supabase-gotrue:
+    image: supabase/gotrue:v2.132.3
+    container_name: supabase-gotrue
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:postgres@supabase-db:5432/postgres?sslmode=disable
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "false"
+    networks:
+      - supabase-net
+
+  supabase-postgrest:
+    image: postgrest/postgrest:v10.1.2
+    container_name: supabase-postgrest
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://postgres:postgres@supabase-db:5432/postgres?sslmode=disable
+      PGRST_DB_SCHEMAS: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+    networks:
+      - supabase-net
+
+  supabase-realtime:
+    image: supabase/realtime:v2.25.26
+    container_name: supabase-realtime
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DB_HOST: supabase-db
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_PORT: 5432
+      JWT_SECRET: ${JWT_SECRET}
+      REPLICATION_MODE: RLS
+      REPLICATION_POLL_INTERVAL: 100
+    networks:
+      - supabase-net
+
+  supabase-studio:
+    image: supabase/studio:latest
+    container_name: supabase-studio
+    environment:
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_PUBLIC_URL: http://localhost:54321
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+    ports:
+      - "54323:3000"
+    networks:
+      - supabase-net
 
 networks:
   proxy:
     external: true
+  supabase-net:
+    driver: bridge
