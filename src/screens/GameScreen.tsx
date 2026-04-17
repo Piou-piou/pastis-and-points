@@ -126,15 +126,8 @@ export default function GameScreen({ mode, onQuit, matchId, onMatchFinish }: Gam
           [isTeam1 ? 'team1_id' : 'team2_id']: winnerId
         }).eq('id', nextMatch.id);
       } else {
-        const { count } = await supabase
-          .from('matches')
-          .select('*', { count: 'exact', head: true })
-          .eq('tournament_id', matchData.tournament_id)
-          .eq('status', 'waiting');
-        
-        if (count === 0) {
-          await supabase.from('tournaments').update({ status: 'finished' }).eq('id', matchData.tournament_id);
-        }
+        // This was the final match
+        await supabase.from('tournaments').update({ status: 'finished' }).eq('id', matchData.tournament_id);
       }
 
       if (onMatchFinish) onMatchFinish();

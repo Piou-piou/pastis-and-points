@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import SplashScreen from './src/screens/SplashScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import GameScreen from './src/screens/GameScreen';
@@ -11,6 +12,7 @@ import { GameMode } from './src/types/game';
 import * as Linking from 'expo-linking';
 
 type Screen = 'splash' | 'home' | 'game' | 'tournament_setup' | 'tournament_join' | 'tournament_bracket';
+const TOURNAMENT_ID_KEY = '@pastis_tournament_id';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('splash');
@@ -19,10 +21,12 @@ export default function App() {
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
 
   useEffect(() => {
+    loadTournament();
+    
     const handleDeepLink = (event: { url: string }) => {
       const { queryParams } = Linking.parse(event.url);
       if (queryParams?.tournamentId) {
-        setTournamentId(queryParams.tournamentId as string);
+        saveTournament(queryParams.tournamentId as string);
         setCurrentScreen('tournament_join');
       }
     };
@@ -39,21 +43,51 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
+  const loadTournament = async () => {
+    try {
+      const savedId = await AsyncStorage.getItem(TOURNAMENT_ID_KEY);
+      if (savedId) {
+        setTournamentId(savedId);
+      }
+    } catch (e) {
+      console.error('Failed to load tournament ID', e);
+    }
+  };
+
+  const saveTournament = async (id: string | null) => {
+    try {
+      if (id) {
+        await AsyncStorage.setItem(TOURNAMENT_ID_KEY, id);
+      } else {
+        await AsyncStorage.removeItem(TOURNAMENT_ID_KEY);
+      }
+      setTournamentId(id);
+    } catch (e) {
+      console.error('Failed to save tournament ID', e);
+    }
+  };
+
   const handleStartGame = (mode: GameMode) => {
     setGameMode(mode);
     setCurrentScreen('game');
-    setTournamentId(null);
     setCurrentMatchId(null);
   };
 
   const handleQuitGame = () => {
-    setCurrentScreen('home');
-    setTournamentId(null);
+    if (tournamentId) {
+      setCurrentScreen('tournament_bracket');
+    } else {
+      setCurrentScreen('home');
+    }
     setCurrentMatchId(null);
   };
 
   const handleSplashFinish = () => {
-    setCurrentScreen('home');
+    if (tournamentId) {
+      setCurrentScreen('tournament_bracket');
+    } else {
+      setCurrentScreen('home');
+    }
   };
 
   const handleCreateTournament = () => {
@@ -61,22 +95,28 @@ export default function App() {
   };
 
   const handleTournamentCreated = (id: string) => {
-    setTournamentId(id);
+    saveTournament(id);
     setCurrentScreen('tournament_bracket');
   };
 
   const handleJoinTournament = (id: string) => {
-    setTournamentId(id);
+    saveTournament(id);
     setCurrentScreen('tournament_join');
   };
 
   const handleTournamentJoined = (id: string) => {
-    setTournamentId(id);
+    saveTournament(id);
     setCurrentScreen('tournament_bracket');
+  };
+
+  const handleQuitTournament = () => {
+    saveTournament(null);
+    setCurrentScreen('home');
   };
 
   const handleLaunchMatch = (matchId: string) => {
     setCurrentMatchId(matchId);
+    setGameMode('2vs2'); // Default tournament mode
     setCurrentScreen('game');
   };
 
@@ -116,7 +156,7 @@ export default function App() {
         <TournamentBracketScreen 
           tournamentId={tournamentId!}
           onLaunchMatch={handleLaunchMatch}
-          onBack={() => setCurrentScreen('home')}
+          onBack={handleQuitTournament}
         />
       )}
     </View>

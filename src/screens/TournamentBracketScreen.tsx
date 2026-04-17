@@ -58,6 +58,17 @@ export default function TournamentBracketScreen({ tournamentId, onLaunchMatch, o
     if (data) setMatches(data);
   };
 
+  const deleteTeam = async (teamId: string) => {
+    try {
+      const { error } = await supabase.from('teams').delete().eq('id', teamId);
+      if (error) throw error;
+      setTeams(prev => prev.filter(t => t.id !== teamId));
+    } catch (error) {
+      console.error('Error deleting team:', error);
+      alert('Erreur lors de la suppression');
+    }
+  };
+
   const generateBracket = async () => {
     if (!tournament || teams.length < 2) return;
     setStarting(true);
@@ -66,37 +77,63 @@ export default function TournamentBracketScreen({ tournamentId, onLaunchMatch, o
       const numRounds = Math.ceil(Math.log2(tournament.max_teams));
       const matchEntries = [];
 
+      // Create all match placeholders first
       for (let r = 0; r < numRounds; r++) {
         const numMatchesInRound = Math.pow(2, numRounds - r - 1);
         for (let i = 0; i < numMatchesInRound; i++) {
-          let team1_id = null;
-          let team2_id = null;
-
-          if (r === 0) {
-            team1_id = shuffledTeams[i * 2]?.id || null;
-            team2_id = shuffledTeams[i * 2 + 1]?.id || null;
-          }
-
           matchEntries.push({
             tournament_id: tournamentId,
             round: r,
             match_index: i,
-            team1_id,
-            team2_id,
+            team1_id: null,
+            team2_id: null,
             status: 'waiting'
           });
         }
       }
 
-      const { error: matchError } = await supabase.from('matches').insert(matchEntries);
+      const { data: createdMatches, error: matchError } = await supabase
+        .from('matches')
+        .insert(matchEntries)
+        .select();
+
       if (matchError) throw matchError;
 
-      const { error: tournamentError } = await supabase
-        .from('tournaments')
-        .update({ status: 'in_progress' })
-        .eq('id', tournamentId);
+      // Fill first round and handle "byes"
+      const firstRoundMatches = (createdMatches || []).filter(m => m.round === 0).sort((a, b) => a.match_index - b.match_index);
       
-      if (tournamentError) throw tournamentError;
+      for (let i = 0; i < firstRoundMatches.length; i++) {
+        const match = firstRoundMatches[i];
+        const team1 = shuffledTeams[i * 2] || null;
+        const team2 = shuffledTeams[i * 2 + 1] || null;
+
+        if (team1 && !team2) {
+          // Automatic winner for bye
+          await supabase.from('matches').update({
+            team1_id: team1.id,
+            winner_id: team1.id,
+            status: 'finished'
+          }).eq('id', match.id);
+
+          // Move to next round
+          const nextMatchIndex = Math.floor(match.match_index / 2);
+          const isTeam1 = match.match_index % 2 === 0;
+          const nextMatch = (createdMatches || []).find(m => m.round === 1 && m.match_index === nextMatchIndex);
+          
+          if (nextMatch) {
+            await supabase.from('matches').update({
+              [isTeam1 ? 'team1_id' : 'team2_id']: team1.id
+            }).eq('id', nextMatch.id);
+          }
+        } else {
+          await supabase.from('matches').update({
+            team1_id: team1?.id || null,
+            team2_id: team2?.id || null,
+          }).eq('id', match.id);
+        }
+      }
+
+      await supabase.from('tournaments').update({ status: 'in_progress' }).eq('id', tournamentId);
     } catch (error) {
       console.error('Error starting tournament:', error);
       alert('Erreur lors du lancement');
@@ -104,6 +141,15 @@ export default function TournamentBracketScreen({ tournamentId, onLaunchMatch, o
       setStarting(false);
     }
   };
+
+  const getWinner = () => {
+    if (tournament?.status !== 'finished') return null;
+    const numRounds = Math.ceil(Math.log2(tournament?.max_teams || 2));
+    const finalMatch = matches.find(m => m.round === numRounds - 1);
+    return teams.find(t => t.id === finalMatch?.winner_id);
+  };
+
+  const winner = getWinner();
 
   const getTeamName = (id: string | null) => {
     if (!id) return 'À définir';
@@ -124,13 +170,20 @@ export default function TournamentBracketScreen({ tournamentId, onLaunchMatch, o
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backText}>← Retour</Text>
+          <Text style={styles.backText}>✕ Quitter</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Tableau du Concours</Text>
         <View style={{ width: 60 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {winner && (
+          <View style={styles.winnerBanner}>
+            <Text style={styles.winnerLabel}>🏆 Grand Vainqueur 🏆</Text>
+            <Text style={styles.winnerName}>{winner.name}</Text>
+          </View>
+        )}
+
         {isRegistration ? (
           <View style={styles.registrationContainer}>
             <Text style={styles.infoTitle}>Inscriptions en cours</Text>
@@ -139,8 +192,13 @@ export default function TournamentBracketScreen({ tournamentId, onLaunchMatch, o
             <View style={styles.teamList}>
               {teams.map((team, idx) => (
                 <View key={team.id} style={styles.teamRow}>
-                  <Text style={styles.teamNumber}>{idx + 1}.</Text>
-                  <Text style={styles.teamNameText}>{team.name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                    <Text style={styles.teamNumber}>{idx + 1}.</Text>
+                    <Text style={styles.teamNameText}>{team.name}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => deleteTeam(team.id)} style={styles.deleteButton}>
+                    <Text style={styles.deleteButtonText}>Supprimer</Text>
+                  </TouchableOpacity>
                 </View>
               ))}
             </View>
@@ -263,6 +321,43 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 18,
     fontWeight: '600',
+    flex: 1,
+  },
+  deleteButton: {
+    padding: 8,
+    backgroundColor: 'rgba(230, 57, 70, 0.2)',
+    borderRadius: 8,
+  },
+  deleteButtonText: {
+    color: '#E63946',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  winnerBanner: {
+    backgroundColor: '#F1C40F',
+    borderRadius: 20,
+    padding: 25,
+    alignItems: 'center',
+    marginBottom: 30,
+    shadowColor: '#F1C40F',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.4,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  winnerLabel: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+    marginBottom: 10,
+  },
+  winnerName: {
+    color: '#000',
+    fontSize: 32,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   button: {
     backgroundColor: '#27AE60',

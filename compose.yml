@@ -7,14 +7,14 @@ services:
     container_name: pastis-and-points
     restart: always
     environment:
-      - SUPABASE_URL=http://supabase-kong:8000
+      - SUPABASE_URL=${SUPABASE_URL:-http://supabase-kong:8000}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
     networks:
       - proxy
       - supabase-net
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.pastis.rule=Host(`pastis.dev-up.app`)"
+      - "traefik.http.routers.pastis.rule=Host(`${DOMAIN:-pastis.dev-up.app}`)"
       - "traefik.http.routers.pastis.entrypoints=https"
 
   # --- Local Supabase Stack ---
