@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: pastis-and-points
+    container_name: pastis-and-points-dev
     restart: always
     environment:
       - SUPABASE_URL=${SUPABASE_URL:-http://supabase-kong:8000}
