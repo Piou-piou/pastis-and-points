@@ -14,7 +14,7 @@ services:
       - supabase-net
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.pastis.rule=Host(`${DOMAIN:-pastis.dev-up.app}`)"
+      - "traefik.http.routers.pastis.rule=Host(`${DOMAIN:-pastis-dev.dev-up.app}`)"
       - "traefik.http.routers.pastis.entrypoints=https"
 
   # --- Local Supabase Stack ---
