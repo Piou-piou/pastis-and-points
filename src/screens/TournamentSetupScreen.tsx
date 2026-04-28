@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, TextInput, ActivityIndicator } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import QRCode from 'react-native-qrcode-svg';
 import * as Linking from 'expo-linking';
 
 interface TournamentSetupScreenProps {
+  userId: string;
   onCreated: (id: string) => void;
   onBack: () => void;
 }
 
-export default function TournamentSetupScreen({ onCreated, onBack }: TournamentSetupScreenProps) {
+export default function TournamentSetupScreen({ userId, onCreated, onBack }: TournamentSetupScreenProps) {
   const [maxTeams, setMaxTeams] = useState('8');
   const [loading, setLoading] = useState(false);
   const [tournamentId, setTournamentId] = useState<string | null>(null);
@@ -17,19 +18,7 @@ export default function TournamentSetupScreen({ onCreated, onBack }: TournamentS
   const handleCreate = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('tournaments')
-        .insert([
-          { 
-            max_teams: parseInt(maxTeams, 10), 
-            status: 'registration',
-            organizer_id: 'temp-organizer-id' 
-          }
-        ])
-        .select()
-        .single();
-
-      if (error) throw error;
+      const data = await api.createTournament(userId, parseInt(maxTeams, 10));
       setTournamentId(data.id);
     } catch (error) {
       console.error('Error creating tournament:', error);

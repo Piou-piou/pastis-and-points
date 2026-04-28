@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator } from 'react-native';
 import { GameMode, Team } from '../types/game';
-import { supabase } from '../lib/supabase';
+import { api, socket } from '../lib/api';
 import { Match } from '../types/tournament';
 
 interface GameScreenProps {
+  userId: string;
   mode: GameMode;
   onQuit: () => void;
   matchId?: string | null;
   onMatchFinish?: () => void;
 }
 
-export default function GameScreen({ mode, onQuit, matchId, onMatchFinish }: GameScreenProps) {
+export default function GameScreen({ userId, mode, onQuit, matchId, onMatchFinish }: GameScreenProps) {
   const [redTeam, setRedTeam] = useState<Team>({
     name: mode === '1vs1' ? 'Joueur 1' : 'Équipe Rouge',
     color: '#E63946',
@@ -31,53 +32,77 @@ export default function GameScreen({ mode, onQuit, matchId, onMatchFinish }: Gam
   const [matchData, setMatchData] = useState<Match | null>(null);
   const WINNING_SCORE = 13;
 
+  const teamNamesRef = React.useRef({ red: redTeam.name, blue: blueTeam.name });
+  const matchDataRef = React.useRef(matchData);
+
+  useEffect(() => {
+    teamNamesRef.current = { red: redTeam.name, blue: blueTeam.name };
+  }, [redTeam.name, blueTeam.name]);
+
+  useEffect(() => {
+    matchDataRef.current = matchData;
+  }, [matchData]);
+
   useEffect(() => {
     if (matchId) {
       fetchMatchDetails();
       
-      const matchSub = supabase
-        .channel(`match-${matchId}`)
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${matchId}` }, (payload) => {
-          const updatedMatch = payload.new as Match;
-          setMatchData(updatedMatch);
-          setRedTeam(prev => ({ ...prev, totalScore: updatedMatch.team1_score }));
-          setBlueTeam(prev => ({ ...prev, totalScore: updatedMatch.team2_score }));
+      socket.emit('join-match', matchId);
+      
+      socket.on('match-update', (payload) => {
+        if (payload.type === 'match-updated') {
+          const updatedMatch = payload.data;
+          setMatchData(prev => prev ? ({ ...prev, ...updatedMatch }) : null);
+          
+          if (updatedMatch.team1_score !== undefined) setRedTeam(prev => ({ ...prev, totalScore: updatedMatch.team1_score }));
+          if (updatedMatch.team2_score !== undefined) setBlueTeam(prev => ({ ...prev, totalScore: updatedMatch.team2_score }));
+          
           if (updatedMatch.status === 'finished') {
-            setIsGameOver(true);
+            setIsGameOver(prev => {
+              if (!prev) {
+                const winnerId = updatedMatch.winner_id;
+                const winnerName = winnerId === (updatedMatch.team1_id || matchDataRef.current?.team1_id) 
+                  ? teamNamesRef.current.red 
+                  : teamNamesRef.current.blue;
+                
+                Alert.alert("Partie Terminée !", `${winnerName} a gagné la partie !`, [
+                  { 
+                    text: matchId ? "Retour au tableau" : "Menu Principal", 
+                    onPress: () => matchId ? (onMatchFinish && onMatchFinish()) : onQuit() 
+                  }
+                ]);
+              }
+              return true;
+            });
           }
-        })
-        .subscribe();
+        }
+      });
 
       return () => {
-        supabase.removeChannel(matchSub);
+        socket.off('match-update');
       };
     }
   }, [matchId]);
 
   const fetchMatchDetails = async () => {
     try {
-      const { data: match, error: matchError } = await supabase
-        .from('matches')
-        .select('*, team1:teams!team1_id(name), team2:teams!team2_id(name)')
-        .eq('id', matchId)
-        .single();
+      const match = await (await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'}/matches-single/${matchId}`)).json();
 
-      if (matchError) throw matchError;
       setMatchData(match);
       
       setRedTeam(prev => ({ 
         ...prev, 
-        name: (match as any).team1?.name || 'Équipe 1',
+        name: match.team1_name || 'Équipe 1',
         totalScore: match.team1_score 
       }));
       setBlueTeam(prev => ({ 
         ...prev, 
-        name: (match as any).team2?.name || 'Équipe 2',
+        name: match.team2_name || 'Équipe 2',
         totalScore: match.team2_score 
       }));
 
       if (match.status === 'waiting') {
-        await supabase.from('matches').update({ status: 'in_progress' }).eq('id', matchId);
+        await api.updateMatch(matchId!, { status: 'in_progress' });
       }
     } catch (error) {
       console.error('Error fetching match details:', error);
@@ -87,53 +112,75 @@ export default function GameScreen({ mode, onQuit, matchId, onMatchFinish }: Gam
     }
   };
 
-  const syncScores = async (redTotal: number, blueTotal: number) => {
+  const syncScores = async (redTotal: number, blueTotal: number, tournamentId?: string) => {
     if (!matchId) return;
     try {
-      await supabase.from('matches').update({
+      await api.updateMatch(matchId, {
         team1_score: redTotal,
-        team2_score: blueTotal
-      }).eq('id', matchId);
+        team2_score: blueTotal,
+        tournament_id: tournamentId
+      });
     } catch (error) {
       console.error('Error syncing scores:', error);
     }
   };
 
   const finishMatch = async (winnerId: string | null) => {
-    if (!matchId || !matchData) return;
+    setLoading(true);
+    console.log('--- START finishMatch ---');
+    
     try {
-      const { error } = await supabase.from('matches').update({
-        status: 'finished',
-        winner_id: winnerId
-      }).eq('id', matchId);
-
-      if (error) throw error;
-
-      const nextRound = matchData.round + 1;
-      const nextMatchIndex = Math.floor(matchData.match_index / 2);
-      const isTeam1 = matchData.match_index % 2 === 0;
-
-      const { data: nextMatch } = await supabase
-        .from('matches')
-        .select('id')
-        .eq('tournament_id', matchData.tournament_id)
-        .eq('round', nextRound)
-        .eq('match_index', nextMatchIndex)
-        .single();
-
-      if (nextMatch) {
-        await supabase.from('matches').update({
-          [isTeam1 ? 'team1_id' : 'team2_id']: winnerId
-        }).eq('id', nextMatch.id);
-      } else {
-        // This was the final match
-        await supabase.from('tournaments').update({ status: 'finished' }).eq('id', matchData.tournament_id);
+      // 1. Re-fetch current match one last time to be 100% sure of IDs
+      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'}/matches-single/${matchId}`);
+      const freshMatchData = await res.json();
+      
+      let finalWinnerId = winnerId;
+      if (!finalWinnerId && isGameOver) {
+        // Fallback calculation if winnerId was somehow lost
+        finalWinnerId = redTeam.totalScore >= WINNING_SCORE ? freshMatchData.team1_id : freshMatchData.team2_id;
       }
 
+      console.log('Final Winner ID:', finalWinnerId);
+
+      // 2. Mark current match as finished
+      await api.updateMatch(matchId!, {
+        status: 'finished',
+        winner_id: finalWinnerId,
+        team1_score: redTeam.totalScore,
+        team2_score: blueTeam.totalScore,
+        tournament_id: freshMatchData.tournament_id
+      });
+
+      // 3. Handle progression
+      if (finalWinnerId && freshMatchData.tournament_id) {
+        const nextRound = (freshMatchData.round || 0) + 1;
+        const nextMatchIndex = Math.floor((freshMatchData.match_index || 0) / 2);
+        const isTeam1Slot = (freshMatchData.match_index || 0) % 2 === 0;
+
+        const allMatches = await api.getMatches(freshMatchData.tournament_id);
+        const nextMatch = allMatches.find((m: Match) => m.round === nextRound && m.match_index === nextMatchIndex);
+
+        if (nextMatch) {
+          console.log(`Propelling ${finalWinnerId} to next match ${nextMatch.id}`);
+          await api.updateMatch(nextMatch.id, {
+            [isTeam1Slot ? 'team1_id' : 'team2_id']: finalWinnerId
+          });
+        } else {
+          // Final match logic
+          const maxRound = Math.max(...allMatches.map((m: Match) => m.round));
+          if (freshMatchData.round === maxRound) {
+            await api.updateTournament(freshMatchData.tournament_id, { status: 'finished' });
+          }
+        }
+      }
+
+      console.log('--- END finishMatch SUCCESS ---');
       if (onMatchFinish) onMatchFinish();
     } catch (error) {
-      console.error('Error finishing match:', error);
-      alert('Erreur lors de la validation du match');
+      console.error('Error in finishMatch:', error);
+      alert('Erreur lors de la validation finale du match');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -171,21 +218,37 @@ export default function GameScreen({ mode, onQuit, matchId, onMatchFinish }: Gam
     const newRedTotal = redTeam.totalScore + redTeam.roundScore;
     const newBlueTotal = blueTeam.totalScore + blueTeam.roundScore;
 
+    console.log('validateRound called. New scores:', { newRedTotal, newBlueTotal });
+
     setRedTeam(prev => ({ ...prev, totalScore: newRedTotal, roundScore: 0 }));
     setBlueTeam(prev => ({ ...prev, totalScore: newBlueTotal, roundScore: 0 }));
 
-    syncScores(newRedTotal, newBlueTotal);
+    const latestMatchData = matchDataRef.current;
+    syncScores(newRedTotal, newBlueTotal, latestMatchData?.tournament_id);
 
     if (newRedTotal >= WINNING_SCORE || newBlueTotal >= WINNING_SCORE) {
       const winnerName = newRedTotal >= WINNING_SCORE ? redTeam.name : blueTeam.name;
-      const winnerId = newRedTotal >= WINNING_SCORE ? matchData?.team1_id : matchData?.team2_id;
+      
+      // Use ref to get the absolute latest IDs
+      const latestMatchData = matchDataRef.current;
+      const winnerId = newRedTotal >= WINNING_SCORE ? latestMatchData?.team1_id : latestMatchData?.team2_id;
+      
+      console.log('Victory detected!', { winnerName, winnerId, team1_id: latestMatchData?.team1_id, team2_id: latestMatchData?.team2_id });
+      
       setIsGameOver(true);
       
       Alert.alert("Partie Terminée !", `${winnerName} a gagné la partie !`, [
-        { text: "Corriger", style: 'cancel' },
+        { text: "Corriger", style: 'cancel', onPress: () => setIsGameOver(false) },
         { 
           text: matchId ? "Retour au tableau" : "Menu Principal", 
-          onPress: () => matchId ? finishMatch(winnerId || null) : onQuit() 
+          onPress: () => {
+            console.log('User clicked Finish. WinnerId:', winnerId);
+            if (matchId) {
+              finishMatch(winnerId || null);
+            } else {
+              onQuit();
+            }
+          }
         }
       ]);
     }
@@ -195,7 +258,7 @@ export default function GameScreen({ mode, onQuit, matchId, onMatchFinish }: Gam
     setRedTeam(prev => ({ ...prev, totalScore: 0, roundScore: 0 }));
     setBlueTeam(prev => ({ ...prev, totalScore: 0, roundScore: 0 }));
     setIsGameOver(false);
-    syncScores(0, 0);
+    syncScores(0, 0, matchDataRef.current?.tournament_id);
   };
 
   if (loading) {
@@ -242,7 +305,9 @@ export default function GameScreen({ mode, onQuit, matchId, onMatchFinish }: Gam
           onLongPress={() => undoScore('red')}
           activeOpacity={0.8}
         >
-          <Text style={styles.teamNameText}>{redTeam.name}</Text>
+          <Text style={styles.teamNameText}>
+            {redTeam.name} {matchData?.team1_creator_id === userId ? '(Moi)' : ''}
+          </Text>
           <Text style={styles.roundScoreText}>+{redTeam.roundScore}</Text>
           <Text style={styles.instructionText}>Cliquez pour ajouter une boule</Text>
           <Text style={styles.hintText}>(Appui long pour corriger)</Text>
@@ -255,7 +320,9 @@ export default function GameScreen({ mode, onQuit, matchId, onMatchFinish }: Gam
           onLongPress={() => undoScore('blue')}
           activeOpacity={0.8}
         >
-          <Text style={styles.teamNameText}>{blueTeam.name}</Text>
+          <Text style={styles.teamNameText}>
+            {blueTeam.name} {matchData?.team2_creator_id === userId ? '(Moi)' : ''}
+          </Text>
           <Text style={styles.roundScoreText}>+{blueTeam.roundScore}</Text>
           <Text style={styles.instructionText}>Cliquez pour ajouter une boule</Text>
           <Text style={styles.hintText}>(Appui long pour corriger)</Text>

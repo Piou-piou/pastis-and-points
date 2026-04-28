@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, TextInput, ActivityIndicator } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { Tournament } from '../types/tournament';
 
 interface TournamentJoinScreenProps {
+  userId: string;
   tournamentId: string;
   onJoined: (id: string) => void;
   onBack: () => void;
 }
 
-export default function TournamentJoinScreen({ tournamentId, onJoined, onBack }: TournamentJoinScreenProps) {
+export default function TournamentJoinScreen({ userId, tournamentId, onJoined, onBack }: TournamentJoinScreenProps) {
   const [teamName, setTeamName] = useState('');
   const [loading, setLoading] = useState(false);
   const [tournament, setTournament] = useState<Tournament | null>(null);
@@ -21,13 +22,7 @@ export default function TournamentJoinScreen({ tournamentId, onJoined, onBack }:
 
   const fetchTournament = async () => {
     try {
-      const { data, error } = await supabase
-        .from('tournaments')
-        .select('*')
-        .eq('id', tournamentId)
-        .single();
-
-      if (error) throw error;
+      const data = await api.getTournament(tournamentId);
       setTournament(data);
     } catch (error) {
       console.error('Error fetching tournament:', error);
@@ -40,29 +35,20 @@ export default function TournamentJoinScreen({ tournamentId, onJoined, onBack }:
 
   const handleJoin = async () => {
     if (!teamName.trim()) return;
+    if (!userId) {
+      alert('Identifiant utilisateur non initialisé. Veuillez rafraîchir.');
+      return;
+    }
     setLoading(true);
     try {
-      const { count, error: countError } = await supabase
-        .from('teams')
-        .select('*', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId);
-
-      if (countError) throw countError;
-      if (count !== null && tournament && count >= tournament.max_teams) {
+      const teams = await api.getTeams(tournamentId);
+      
+      if (tournament && teams.length >= tournament.max_teams) {
         alert('Le concours est complet');
         return;
       }
 
-      const { error } = await supabase
-        .from('teams')
-        .insert([
-          { 
-            tournament_id: tournamentId, 
-            name: teamName.trim() 
-          }
-        ]);
-
-      if (error) throw error;
+      await api.addTeam(tournamentId, teamName.trim(), userId);
       onJoined(tournamentId);
     } catch (error) {
       console.error('Error joining tournament:', error);

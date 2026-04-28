@@ -12,6 +12,7 @@ export interface Tournament {
 export interface TournamentTeam {
   id: string;
   tournament_id: string;
+  creator_id: string;
   name: string;
   created_at: string;
 }
@@ -23,6 +24,8 @@ export interface Match {
   match_index: number;
   team1_id: string | null;
   team2_id: string | null;
+  team1_creator_id?: string;
+  team2_creator_id?: string;
   team1_score: number;
   team2_score: number;
   winner_id: string | null;

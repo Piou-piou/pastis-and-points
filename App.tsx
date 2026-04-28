@@ -13,15 +13,23 @@ import * as Linking from 'expo-linking';
 
 type Screen = 'splash' | 'home' | 'game' | 'tournament_setup' | 'tournament_join' | 'tournament_bracket';
 const TOURNAMENT_ID_KEY = '@pastis_tournament_id';
+const USER_ID_KEY = '@pastis_user_id';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('splash');
   const [gameMode, setGameMode] = useState<GameMode>('1vs1');
   const [tournamentId, setTournamentId] = useState<string | null>(null);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string>('');
+  const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
-    loadTournament();
+    const init = async () => {
+      await loadTournament();
+      await initUserId();
+      setInitializing(false);
+    };
+    init();
     
     const handleDeepLink = (event: { url: string }) => {
       const { queryParams } = Linking.parse(event.url);
@@ -51,6 +59,31 @@ export default function App() {
       }
     } catch (e) {
       console.error('Failed to load tournament ID', e);
+    }
+  };
+
+  const initUserId = async () => {
+    try {
+      const isWeb = typeof window !== 'undefined' && window.sessionStorage;
+      let id: string | null = null;
+
+      if (isWeb) {
+        id = window.sessionStorage.getItem(USER_ID_KEY);
+      } else {
+        id = await AsyncStorage.getItem(USER_ID_KEY);
+      }
+
+      if (!id) {
+        id = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        if (isWeb) {
+          window.sessionStorage.setItem(USER_ID_KEY, id);
+        } else {
+          await AsyncStorage.setItem(USER_ID_KEY, id);
+        }
+      }
+      setUserId(id);
+    } catch (e) {
+      console.error('Failed to handle userId', e);
     }
   };
 
@@ -120,6 +153,14 @@ export default function App() {
     setCurrentScreen('game');
   };
 
+  if (initializing) {
+    return (
+      <View style={[styles.container, { backgroundColor: 'rgb(26, 26, 26)' }]}>
+        <StatusBar style="light" />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: 'rgb(26, 26, 26)' }]}>
       <StatusBar style="light" />
@@ -133,6 +174,7 @@ export default function App() {
       )}
       {currentScreen === 'game' && (
         <GameScreen 
+          userId={userId}
           mode={gameMode} 
           onQuit={handleQuitGame} 
           matchId={currentMatchId}
@@ -141,12 +183,14 @@ export default function App() {
       )}
       {currentScreen === 'tournament_setup' && (
         <TournamentSetupScreen 
+          userId={userId}
           onCreated={handleTournamentCreated}
           onBack={() => setCurrentScreen('home')}
         />
       )}
       {currentScreen === 'tournament_join' && (
         <TournamentJoinScreen 
+          userId={userId}
           tournamentId={tournamentId!}
           onJoined={handleTournamentJoined}
           onBack={() => setCurrentScreen('home')}
@@ -154,6 +198,7 @@ export default function App() {
       )}
       {currentScreen === 'tournament_bracket' && (
         <TournamentBracketScreen 
+          userId={userId}
           tournamentId={tournamentId!}
           onLaunchMatch={handleLaunchMatch}
           onBack={handleQuitTournament}
