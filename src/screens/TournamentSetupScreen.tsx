@@ -12,13 +12,14 @@ interface TournamentSetupScreenProps {
 
 export default function TournamentSetupScreen({ userId, onCreated, onBack }: TournamentSetupScreenProps) {
   const [maxTeams, setMaxTeams] = useState('8');
+  const [type, setType] = useState<'bracket' | 'round_robin'>('bracket');
   const [loading, setLoading] = useState(false);
   const [tournamentId, setTournamentId] = useState<string | null>(null);
 
   const handleCreate = async () => {
     setLoading(true);
     try {
-      const data = await api.createTournament(userId, parseInt(maxTeams, 10));
+      const data = await api.createTournament(userId, parseInt(maxTeams, 10), type);
       setTournamentId(data.id);
     } catch (error) {
       console.error('Error creating tournament:', error);
@@ -37,6 +38,9 @@ export default function TournamentSetupScreen({ userId, onCreated, onBack }: Tou
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
           <Text style={styles.title}>Concours Créé !</Text>
+          <Text style={styles.subtitle}>
+            Mode : {type === 'bracket' ? 'Élimination directe' : 'Championnat'}
+          </Text>
           <Text style={styles.subtitle}>Faites scanner ce QR Code aux participants</Text>
           
           <View style={styles.qrContainer}>
@@ -67,7 +71,25 @@ export default function TournamentSetupScreen({ userId, onCreated, onBack }: Tou
         <Text style={styles.title}>Nouveau Concours</Text>
         
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Nombre d'équipes</Text>
+          <Text style={styles.label}>Mode de jeu</Text>
+          <View style={styles.typeSelector}>
+            <TouchableOpacity 
+              style={[styles.typeButton, type === 'bracket' && styles.typeButtonActive]}
+              onPress={() => setType('bracket')}
+            >
+              <Text style={[styles.typeButtonText, type === 'bracket' && styles.typeButtonTextActive]}>Mélée / Directe</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.typeButton, type === 'round_robin' && styles.typeButtonActive]}
+              onPress={() => setType('round_robin')}
+            >
+              <Text style={[styles.typeButtonText, type === 'round_robin' && styles.typeButtonTextActive]}>Championnat</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Nombre d'équipes max</Text>
           <TextInput
             style={styles.input}
             value={maxTeams}
@@ -119,7 +141,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 18,
     color: '#BDC3C7',
-    marginBottom: 40,
+    marginBottom: 10,
     textAlign: 'center',
   },
   inputGroup: {
@@ -131,6 +153,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 10,
     fontWeight: '600',
+  },
+  typeSelector: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  typeButton: {
+    flex: 1,
+    paddingVertical: 15,
+    borderRadius: 12,
+    backgroundColor: '#333',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  typeButtonActive: {
+    backgroundColor: 'rgba(39, 174, 96, 0.2)',
+    borderColor: '#27AE60',
+  },
+  typeButtonText: {
+    color: '#AAA',
+    fontWeight: '700',
+  },
+  typeButtonTextActive: {
+    color: '#27AE60',
   },
   input: {
     backgroundColor: '#333',

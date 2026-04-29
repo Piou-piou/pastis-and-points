@@ -43,7 +43,16 @@ const notifyMatch = (id: string, tournamentId: string, type: string, data: any) 
   io.to(`tournament:${tournamentId}`).emit('tournament-update', { type: 'match-updated', data });
 };
 
-// --- API Endpoints ---
+app.delete('/matches', async (req: Request, res: Response) => {
+  const tournament_id = req.query.tournament_id as string;
+  try {
+    await pool.execute('DELETE FROM matches WHERE tournament_id = ?', [tournament_id]);
+    notifyTournament(tournament_id, 'matches-created', []); // Use matches-created to trigger a full refresh
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Tournaments
 app.get('/tournaments/:id', async (req: Request, res: Response) => {
@@ -58,14 +67,14 @@ app.get('/tournaments/:id', async (req: Request, res: Response) => {
 
 app.post('/tournaments', async (req: Request, res: Response) => {
   console.log('POST /tournaments body:', req.body);
-  const { organizer_id, max_teams } = req.body;
+  const { organizer_id, max_teams, type = 'bracket' } = req.body;
   const id = uuidv4();
   try {
     await pool.execute(
-      'INSERT INTO tournaments (id, organizer_id, max_teams) VALUES (?, ?, ?)',
-      [id, organizer_id, max_teams]
+      'INSERT INTO tournaments (id, organizer_id, max_teams, type) VALUES (?, ?, ?, ?)',
+      [id, organizer_id, max_teams, type]
     );
-    res.json({ id, organizer_id, max_teams, status: 'registration' });
+    res.json({ id, organizer_id, max_teams, type, status: 'registration' });
   } catch (err: any) {
     console.error('Error in POST /tournaments:', err);
     res.status(500).json({ error: err.message });
@@ -251,48 +260,58 @@ app.patch('/matches/:id', async (req: Request, res: Response) => {
     }
     
     // 4. Handle Tournament Progression
-    // Progression should happen if it just finished OR if it was already finished but we are force-updating winner (rare)
     if (justFinished && updates.winner_id) {
-      const nextRound = currentMatch.round + 1;
-      const nextMatchIndex = Math.floor(currentMatch.match_index / 2);
-      const isTeam1 = currentMatch.match_index % 2 === 0;
+      // Get tournament to check type
+      const [tRows]: any = await pool.execute('SELECT * FROM tournaments WHERE id = ?', [currentMatch.tournament_id]);
+      const tournament = tRows[0];
 
-      console.log(`Looking for next match: round=${nextRound}, index=${nextMatchIndex}`);
+      if (tournament && tournament.type === 'bracket') {
+        const nextRound = currentMatch.round + 1;
+        const nextMatchIndex = Math.floor(currentMatch.match_index / 2);
+        const isTeam1 = currentMatch.match_index % 2 === 0;
 
-      // Find next match in tournament
-      const [nextRows]: any = await pool.execute(
-        'SELECT id FROM matches WHERE tournament_id = ? AND round = ? AND match_index = ?',
-        [currentMatch.tournament_id, nextRound, nextMatchIndex]
-      );
+        console.log(`Looking for next match: round=${nextRound}, index=${nextMatchIndex}`);
 
-      if (nextRows.length > 0) {
-        const nextMatchId = nextRows[0].id;
-        const updateField = isTeam1 ? 'team1_id' : 'team2_id';
-        console.log(`Updating next match ${nextMatchId}: ${updateField}=${updates.winner_id}`);
-        
-        await pool.execute(
-          `UPDATE matches SET ${updateField} = ? WHERE id = ?`,
-          [updates.winner_id, nextMatchId]
+        // Find next match in tournament
+        const [nextRows]: any = await pool.execute(
+          'SELECT id FROM matches WHERE tournament_id = ? AND round = ? AND match_index = ?',
+          [currentMatch.tournament_id, nextRound, nextMatchIndex]
         );
-        // Notify about next match update
-        notifyMatch(nextMatchId, currentMatch.tournament_id, 'match-updated', { 
-          id: nextMatchId, 
-          [updateField]: updates.winner_id 
-        });
-      } else {
-        console.log('No next match found. Checking if tournament is finished...');
-        // No next match = Final match finished
-        const [maxRoundRow]: any = await pool.execute(
-          'SELECT MAX(round) as max_round FROM matches WHERE tournament_id = ?',
-          [currentMatch.tournament_id]
-        );
-        
-        if (maxRoundRow[0].max_round === currentMatch.round) {
-          console.log('Tournament FINISHED!');
+
+        if (nextRows.length > 0) {
+          const nextMatchId = nextRows[0].id;
+          const updateField = isTeam1 ? 'team1_id' : 'team2_id';
+          console.log(`Updating next match ${nextMatchId}: ${updateField}=${updates.winner_id}`);
+          
           await pool.execute(
-            'UPDATE tournaments SET status = ? WHERE id = ?',
-            ['finished', currentMatch.tournament_id]
+            `UPDATE matches SET ${updateField} = ? WHERE id = ?`,
+            [updates.winner_id, nextMatchId]
           );
+          // Notify about next match update
+          notifyMatch(nextMatchId, currentMatch.tournament_id, 'match-updated', { 
+            id: nextMatchId, 
+            [updateField]: updates.winner_id 
+          });
+        } else {
+          console.log('No next match found. Checking if tournament is finished...');
+          // Check if this was indeed the final round
+          const [maxRoundRow]: any = await pool.execute(
+            'SELECT MAX(round) as max_round FROM matches WHERE tournament_id = ?',
+            [currentMatch.tournament_id]
+          );
+          
+          if (maxRoundRow[0].max_round === currentMatch.round) {
+            console.log('Tournament FINISHED!');
+            await pool.execute('UPDATE tournaments SET status = ? WHERE id = ?', ['finished', currentMatch.tournament_id]);
+            notifyTournament(currentMatch.tournament_id, 'tournament-patch', { status: 'finished' });
+          }
+        }
+      } else if (tournament && tournament.type === 'round_robin') {
+        // Round Robin: Check if all matches are finished
+        const [mRows]: any = await pool.execute('SELECT id FROM matches WHERE tournament_id = ? AND status != ?', [currentMatch.tournament_id, 'finished']);
+        if (mRows.length === 0) {
+          console.log('All Round Robin matches finished! Tournament FINISHED!');
+          await pool.execute('UPDATE tournaments SET status = ? WHERE id = ?', ['finished', currentMatch.tournament_id]);
           notifyTournament(currentMatch.tournament_id, 'tournament-patch', { status: 'finished' });
         }
       }
@@ -307,6 +326,14 @@ app.patch('/matches/:id', async (req: Request, res: Response) => {
 });
 
 const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
+  
+  // Simple auto-migration for prototype
+  try {
+    await pool.execute("ALTER TABLE tournaments ADD COLUMN type VARCHAR(50) NOT NULL DEFAULT 'bracket' AFTER max_teams");
+    console.log('Added type column to tournaments table');
+  } catch (e) {
+    // Column probably already exists
+  }
 });

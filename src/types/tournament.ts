@@ -1,4 +1,5 @@
 export type TournamentStatus = 'registration' | 'in_progress' | 'finished';
+export type TournamentType = 'bracket' | 'round_robin';
 export type MatchStatus = 'waiting' | 'in_progress' | 'finished';
 
 export interface Tournament {
@@ -6,6 +7,7 @@ export interface Tournament {
   organizer_id: string;
   max_teams: number;
   status: TournamentStatus;
+  type: TournamentType;
   created_at: string;
 }
 

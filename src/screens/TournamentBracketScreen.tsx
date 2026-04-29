@@ -82,65 +82,105 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
   };
 
   const generateBracket = async () => {
-    if (!tournament || teams.length < 2) return;
     setStarting(true);
     try {
-      const shuffledTeams = [...teams].sort(() => Math.random() - 0.5);
-      const numRounds = Math.ceil(Math.log2(tournament.max_teams));
-      const matchEntries = [];
-
-      // Create all match placeholders first
-      for (let r = 0; r < numRounds; r++) {
-        const numMatchesInRound = Math.pow(2, numRounds - r - 1);
-        for (let i = 0; i < numMatchesInRound; i++) {
-          matchEntries.push({
-            tournament_id: tournamentId,
-            round: r,
-            match_index: i,
-            team1_id: null,
-            team2_id: null,
-            status: 'waiting'
-          });
-        }
+      // 0. Force refresh of EVERYTHING before generating
+      const [latestTournament, latestTeams] = await Promise.all([
+        api.getTournament(tournamentId),
+        api.getTeams(tournamentId)
+      ]);
+      
+      setTournament(latestTournament);
+      setTeams(latestTeams);
+      
+      if (latestTeams.length < 2) {
+        alert("Il faut au moins 2 équipes pour lancer le concours.");
+        return;
       }
 
-      const createdMatches = await api.createMatchesBulk(matchEntries);
-
-      // Fill first round and handle "byes"
-      const firstRoundMatches = (createdMatches || []).filter((m: any) => m.round === 0).sort((a: any, b: any) => a.match_index - b.match_index);
+      console.log(`Generating ${latestTournament.type} for ${latestTeams.length} teams`);
       
-      for (let i = 0; i < firstRoundMatches.length; i++) {
-        const match = firstRoundMatches[i];
-        const team1 = shuffledTeams[i * 2] || null;
-        const team2 = shuffledTeams[i * 2 + 1] || null;
+      // 1. Clear existing matches
+      await api.clearMatches(tournamentId);
 
-        if (team1 && !team2) {
-          // Automatic winner for bye
-          await api.updateMatch(match.id, {
-            team1_id: team1.id,
-            winner_id: team1.id,
-            status: 'finished'
-          });
+      const shuffledTeams = [...latestTeams].sort(() => Math.random() - 0.5);
+      const matchEntries = [];
 
-          // Move to next round
-          const nextMatchIndex = Math.floor(match.match_index / 2);
-          const isTeam1 = match.match_index % 2 === 0;
-          const nextMatch = (createdMatches || []).find((m: any) => m.round === 1 && m.match_index === nextMatchIndex);
-          
-          if (nextMatch) {
-            await api.updateMatch(nextMatch.id, {
-              [isTeam1 ? 'team1_id' : 'team2_id']: team1.id
+      if (latestTournament.type === 'round_robin') {
+        // --- Round Robin Logic ---
+        // Formula: n * (n-1) / 2 matches. For 3 teams: 3*2/2 = 3 matches.
+        for (let i = 0; i < shuffledTeams.length; i++) {
+          for (let j = i + 1; j < shuffledTeams.length; j++) {
+            matchEntries.push({
+              tournament_id: tournamentId,
+              round: 0,
+              match_index: matchEntries.length,
+              team1_id: shuffledTeams[i].id,
+              team2_id: shuffledTeams[j].id,
+              status: 'waiting'
             });
           }
-        } else {
-          await api.updateMatch(match.id, {
-            team1_id: team1?.id || null,
-            team2_id: team2?.id || null,
-          });
+        }
+        console.log(`RR: Created ${matchEntries.length} matches`);
+        await api.createMatchesBulk(matchEntries);
+      } else {
+        // --- Bracket Logic ---
+        const actualTeamCount = shuffledTeams.length;
+        const bracketSize = Math.pow(2, Math.ceil(Math.log2(actualTeamCount)));
+        const numRounds = Math.log2(bracketSize);
+
+        for (let r = 0; r < numRounds; r++) {
+          const numMatchesInRound = Math.pow(2, numRounds - r - 1);
+          for (let i = 0; i < numMatchesInRound; i++) {
+            matchEntries.push({
+              tournament_id: tournamentId,
+              round: r,
+              match_index: i,
+              team1_id: null,
+              team2_id: null,
+              status: 'waiting'
+            });
+          }
+        }
+
+        const createdMatches = await api.createMatchesBulk(matchEntries);
+        const firstRoundMatches = (createdMatches || []).filter((m: any) => m.round === 0).sort((a: any, b: any) => a.match_index - b.match_index);
+        
+        for (let i = 0; i < firstRoundMatches.length; i++) {
+          const match = firstRoundMatches[i];
+          const team1 = shuffledTeams[i * 2] || null;
+          const team2 = shuffledTeams[i * 2 + 1] || null;
+
+          if (team1 && !team2) {
+            await api.updateMatch(match.id, {
+              team1_id: team1.id,
+              team2_id: null,
+              winner_id: team1.id,
+              status: 'finished',
+              tournament_id: tournamentId
+            });
+
+            const nextMatchIndex = Math.floor(match.match_index / 2);
+            const isTeam1 = match.match_index % 2 === 0;
+            const nextMatch = (createdMatches || []).find((m: any) => m.round === 1 && m.match_index === nextMatchIndex);
+            if (nextMatch) {
+              await api.updateMatch(nextMatch.id, {
+                [isTeam1 ? 'team1_id' : 'team2_id']: team1.id,
+                tournament_id: tournamentId
+              });
+            }
+          } else {
+            await api.updateMatch(match.id, {
+              team1_id: team1?.id || null,
+              team2_id: team2?.id || null,
+              tournament_id: tournamentId
+            });
+          }
         }
       }
 
       await api.updateTournament(tournamentId, { status: 'in_progress' });
+      await fetchMatches();
     } catch (error) {
       console.error('Error starting tournament:', error);
       alert('Erreur lors du lancement');
@@ -169,20 +209,28 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
       });
 
       // 3. Handle progression
-      const nextRound = match.round + 1;
-      const nextMatchIndex = Math.floor(match.match_index / 2);
-      const isTeam1Slot = match.match_index % 2 === 0;
+      if (tournament?.type === 'bracket') {
+        const nextRound = match.round + 1;
+        const nextMatchIndex = Math.floor(match.match_index / 2);
+        const isTeam1Slot = match.match_index % 2 === 0;
 
-      const nextMatch = allMatches.find((m: Match) => m.round === nextRound && m.match_index === nextMatchIndex);
+        const nextMatch = allMatches.find((m: Match) => m.round === nextRound && m.match_index === nextMatchIndex);
 
-      if (nextMatch) {
-        await api.updateMatch(nextMatch.id, {
-          [isTeam1Slot ? 'team1_id' : 'team2_id']: winnerId,
-          tournament_id: tournamentId
-        });
+        if (nextMatch) {
+          await api.updateMatch(nextMatch.id, {
+            [isTeam1Slot ? 'team1_id' : 'team2_id']: winnerId,
+            tournament_id: tournamentId
+          });
+        } else {
+          const maxRound = Math.max(...allMatches.map((m: Match) => m.round));
+          if (match.round === maxRound) {
+            await api.updateTournament(tournamentId, { status: 'finished' });
+          }
+        }
       } else {
-        const maxRound = Math.max(...allMatches.map((m: Match) => m.round));
-        if (match.round === maxRound) {
+        // Round Robin: Check if all finished
+        const allFinished = allMatches.every((m: Match) => m.id === matchId ? true : m.status === 'finished');
+        if (allFinished) {
           await api.updateTournament(tournamentId, { status: 'finished' });
         }
       }
@@ -205,8 +253,40 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
 
   const winner = getWinner();
 
-  const getTeamName = (id: string | null) => {
-    if (!id) return 'À définir';
+  const getStandings = () => {
+    const stats: Record<string, { id: string, name: string, played: number, won: number, pointsFor: number, pointsAgainst: number }> = {};
+    
+    teams.forEach(team => {
+      stats[team.id] = { id: team.id, name: team.name, played: 0, won: 0, pointsFor: 0, pointsAgainst: 0 };
+    });
+
+    matches.filter(m => m.status === 'finished').forEach(match => {
+      if (match.team1_id && stats[match.team1_id]) {
+        stats[match.team1_id].played++;
+        stats[match.team1_id].pointsFor += match.team1_score;
+        stats[match.team1_id].pointsAgainst += match.team2_score;
+        if (match.winner_id === match.team1_id) stats[match.team1_id].won++;
+      }
+      if (match.team2_id && stats[match.team2_id]) {
+        stats[match.team2_id].played++;
+        stats[match.team2_id].pointsFor += match.team2_score;
+        stats[match.team2_id].pointsAgainst += match.team1_score;
+        if (match.winner_id === match.team2_id) stats[match.team2_id].won++;
+      }
+    });
+
+    return Object.values(stats).sort((a, b) => {
+      if (b.won !== a.won) return b.won - a.won;
+      const diffB = b.pointsFor - b.pointsAgainst;
+      const diffA = a.pointsFor - a.pointsAgainst;
+      return diffB - diffA;
+    });
+  };
+
+  const getTeamName = (id: string | null, matchStatus?: string) => {
+    if (!id) {
+      return matchStatus === 'finished' ? 'EXEMPT' : 'À définir';
+    }
     return teams.find(t => t.id === id)?.name || 'Inconnu';
   };
 
@@ -219,6 +299,7 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
   }
 
   const isRegistration = tournament?.status === 'registration';
+  const isRoundRobin = tournament?.type === 'round_robin';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -227,7 +308,9 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
           <Text style={styles.backText}>✕ Quitter</Text>
         </TouchableOpacity>
         <View style={{ alignItems: 'center' }}>
-          <Text style={styles.headerTitle}>Tableau du Concours</Text>
+          <Text style={styles.headerTitle}>
+            {isRoundRobin ? 'Championnat' : 'Tableau du Concours'}
+          </Text>
           <Text style={{ color: '#666', fontSize: 10 }}>ID: {userId.substring(0, 8)} {tournament?.organizer_id === userId ? '(Admin)' : '(Joueur)'}</Text>
         </View>
         <TouchableOpacity onPress={fetchInitialData} style={styles.refreshButton}>
@@ -236,7 +319,7 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {winner && (
+        {winner && !isRoundRobin && (
           <View style={styles.winnerBanner}>
             <Text style={styles.winnerLabel}>🏆 Grand Vainqueur 🏆</Text>
             <Text style={styles.winnerName}>{winner.name}</Text>
@@ -247,7 +330,7 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
           <View style={styles.registrationContainer}>
             <Text style={styles.infoTitle}>Inscriptions en cours</Text>
             <Text style={styles.infoText}>{teams.length} / {tournament?.max_teams} équipes</Text>
-            
+            {/* ... rest of registration UI remains same ... */}
             <View style={styles.teamList}>
               {teams.map((team, idx) => {
                 const isTournamentAdmin = tournament?.organizer_id === userId;
@@ -294,8 +377,92 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
               </View>
             )}
           </View>
+        ) : isRoundRobin ? (
+          <View style={styles.roundRobinContainer}>
+            <View style={styles.leagueTable}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.columnLabel, { flex: 2 }]}>Équipe</Text>
+                <Text style={styles.columnLabel}>J</Text>
+                <Text style={styles.columnLabel}>V</Text>
+                <Text style={styles.columnLabel}>Diff</Text>
+              </View>
+              {getStandings().map((row, idx) => (
+                <View key={row.id} style={[styles.tableRow, idx === 0 && styles.leaderRow]}>
+                  <Text style={[styles.cellText, { flex: 2, fontWeight: '700' }]}>{idx + 1}. {row.name}</Text>
+                  <Text style={styles.cellText}>{row.played}</Text>
+                  <Text style={styles.cellText}>{row.won}</Text>
+                  <Text style={styles.cellText}>{row.pointsFor - row.pointsAgainst}</Text>
+                </View>
+              ))}
+            </View>
+
+            <Text style={styles.sectionTitle}>Matchs du Championnat</Text>
+            {matches.map(match => {
+              const isTournamentAdmin = tournament?.organizer_id === userId;
+              const team1 = teams.find(t => t.id === match.team1_id);
+              const team2 = teams.find(t => t.id === match.team2_id);
+              const isTeam1Creator = team1?.creator_id === userId;
+              const isTeam2Creator = team2?.creator_id === userId;
+              const canLaunch = isTournamentAdmin || isTeam1Creator || isTeam2Creator;
+
+              return (
+                <TouchableOpacity 
+                  key={match.id} 
+                  style={[
+                    styles.matchCard, 
+                    match.status === 'finished' && styles.matchFinished,
+                    match.status === 'in_progress' && styles.matchInProgress
+                  ]}
+                  onPress={() => {
+                    if (match.status !== 'finished' && canLaunch) onLaunchMatch(match.id);
+                  }}
+                  disabled={match.status === 'finished'}
+                >
+                  <View style={styles.matchTeam}>
+                    <Text style={[styles.matchTeamName, match.winner_id === match.team1_id && styles.winner]}>
+                      {getTeamName(match.team1_id, match.status)}
+                    </Text>
+                    <Text style={styles.matchScore}>{match.team1_score}</Text>
+                  </View>
+                  <View style={styles.matchDivider} />
+                  <View style={styles.matchTeam}>
+                    <Text style={[styles.matchTeamName, match.winner_id === match.team2_id && styles.winner]}>
+                      {getTeamName(match.team2_id, match.status)}
+                    </Text>
+                    <Text style={styles.matchScore}>{match.team2_score}</Text>
+                  </View>
+                  {match.status !== 'finished' && (
+                    <View style={styles.matchActions}>
+                      {isTournamentAdmin ? (
+                        <View style={styles.adminActionContainer}>
+                          <Text style={styles.adminTitle}>Admin - Vainqueur :</Text>
+                          <View style={styles.adminButtonsRow}>
+                            <TouchableOpacity 
+                              style={styles.directFinishButton} 
+                              onPress={() => handleManualFinish(match.id, match.team1_id!)}
+                            >
+                              <Text style={styles.adminFinishText}>{getTeamName(match.team1_id)}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                              style={[styles.directFinishButton, { borderColor: '#3498DB' }]} 
+                              onPress={() => handleManualFinish(match.id, match.team2_id!)}
+                            >
+                              <Text style={[styles.adminFinishText, { color: '#3498DB' }]}>{getTeamName(match.team2_id)}</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={styles.launchHint}>{canLaunch ? 'Jouer le match' : 'Match à venir'}</Text>
+                      )}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         ) : (
           <View style={styles.bracketContainer}>
+            {/* ... current bracket UI ... */}
             {Array.from({ length: Math.ceil(Math.log2(tournament?.max_teams || 2)) }).map((_, r) => (
               <View key={r} style={styles.roundColumn}>
                 <Text style={styles.roundTitle}>{r === 0 ? 'Premier tour' : r === 1 ? 'Demi-finales' : 'Finale'}</Text>
@@ -335,14 +502,14 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
                     >
                       <View style={styles.matchTeam}>
                         <Text style={[styles.matchTeamName, match.winner_id === match.team1_id && styles.winner]}>
-                          {getTeamName(match.team1_id)} {isTeam1Creator && '(Moi)'}
+                          {getTeamName(match.team1_id, match.status)} {isTeam1Creator && '(Moi)'}
                         </Text>
                         <Text style={styles.matchScore}>{match.team1_score}</Text>
                       </View>
                       <View style={styles.matchDivider} />
                       <View style={styles.matchTeam}>
                         <Text style={[styles.matchTeamName, match.winner_id === match.team2_id && styles.winner]}>
-                          {getTeamName(match.team2_id)} {isTeam2Creator && '(Moi)'}
+                          {getTeamName(match.team2_id, match.status)} {isTeam2Creator && '(Moi)'}
                         </Text>
                         <Text style={styles.matchScore}>{match.team2_score}</Text>
                       </View>
@@ -356,13 +523,13 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
                                   style={styles.directFinishButton} 
                                   onPress={() => handleManualFinish(match.id, match.team1_id!)}
                                 >
-                                  <Text style={styles.adminFinishText}>{getTeamName(match.team1_id)}</Text>
+                                  <Text style={styles.adminFinishText}>{getTeamName(match.team1_id, match.status)}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity 
                                   style={[styles.directFinishButton, { borderColor: '#3498DB' }]} 
                                   onPress={() => handleManualFinish(match.id, match.team2_id!)}
                                 >
-                                  <Text style={[styles.adminFinishText, { color: '#3498DB' }]}>{getTeamName(match.team2_id)}</Text>
+                                  <Text style={[styles.adminFinishText, { color: '#3498DB' }]}>{getTeamName(match.team2_id, match.status)}</Text>
                                 </TouchableOpacity>
                               </View>
                             </View>
@@ -540,6 +707,53 @@ const styles = StyleSheet.create({
   matchFinished: {
     opacity: 0.7,
     borderLeftColor: '#27AE60',
+  },
+  roundRobinContainer: {
+    flex: 1,
+  },
+  leagueTable: {
+    backgroundColor: '#333',
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 30,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#444',
+    paddingBottom: 10,
+    marginBottom: 10,
+  },
+  columnLabel: {
+    flex: 1,
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A2A2A',
+    alignItems: 'center',
+  },
+  leaderRow: {
+    backgroundColor: 'rgba(39, 174, 96, 0.1)',
+    borderRadius: 8,
+  },
+  cellText: {
+    flex: 1,
+    color: '#FFF',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  sectionTitle: {
+    color: '#27AE60',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 15,
+    textTransform: 'uppercase',
   },
   matchInProgress: {
     borderLeftColor: '#E67E22',

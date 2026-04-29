@@ -153,22 +153,34 @@ export default function GameScreen({ userId, mode, onQuit, matchId, onMatchFinis
 
       // 3. Handle progression
       if (finalWinnerId && freshMatchData.tournament_id) {
-        const nextRound = (freshMatchData.round || 0) + 1;
-        const nextMatchIndex = Math.floor((freshMatchData.match_index || 0) / 2);
-        const isTeam1Slot = (freshMatchData.match_index || 0) % 2 === 0;
+        // Fetch tournament to check type
+        const tournament = await api.getTournament(freshMatchData.tournament_id);
+        
+        if (tournament.type === 'bracket') {
+          const nextRound = (freshMatchData.round || 0) + 1;
+          const nextMatchIndex = Math.floor((freshMatchData.match_index || 0) / 2);
+          const isTeam1Slot = (freshMatchData.match_index || 0) % 2 === 0;
 
-        const allMatches = await api.getMatches(freshMatchData.tournament_id);
-        const nextMatch = allMatches.find((m: Match) => m.round === nextRound && m.match_index === nextMatchIndex);
+          const allMatches = await api.getMatches(freshMatchData.tournament_id);
+          const nextMatch = allMatches.find((m: Match) => m.round === nextRound && m.match_index === nextMatchIndex);
 
-        if (nextMatch) {
-          console.log(`Propelling ${finalWinnerId} to next match ${nextMatch.id}`);
-          await api.updateMatch(nextMatch.id, {
-            [isTeam1Slot ? 'team1_id' : 'team2_id']: finalWinnerId
-          });
+          if (nextMatch) {
+            console.log(`Propelling ${finalWinnerId} to next match ${nextMatch.id}`);
+            await api.updateMatch(nextMatch.id, {
+              [isTeam1Slot ? 'team1_id' : 'team2_id']: finalWinnerId
+            });
+          } else {
+            // Final match logic
+            const maxRound = Math.max(...allMatches.map((m: Match) => m.round));
+            if (freshMatchData.round === maxRound) {
+              await api.updateTournament(freshMatchData.tournament_id, { status: 'finished' });
+            }
+          }
         } else {
-          // Final match logic
-          const maxRound = Math.max(...allMatches.map((m: Match) => m.round));
-          if (freshMatchData.round === maxRound) {
+          // Round Robin: Just check if all matches are finished to end tournament
+          const allMatches = await api.getMatches(freshMatchData.tournament_id);
+          const allFinished = allMatches.every((m: Match) => m.status === 'finished');
+          if (allFinished) {
             await api.updateTournament(freshMatchData.tournament_id, { status: 'finished' });
           }
         }

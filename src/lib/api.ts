@@ -9,11 +9,11 @@ export const api = {
     const res = await fetch(`${API_URL}/tournaments/${id}`);
     return res.json();
   },
-  async createTournament(organizer_id: string, max_teams: number) {
+  async createTournament(organizer_id: string, max_teams: number, type: string = 'bracket') {
     const res = await fetch(`${API_URL}/tournaments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ organizer_id, max_teams })
+      body: JSON.stringify({ organizer_id, max_teams, type })
     });
     return res.json();
   },
@@ -64,6 +64,12 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ matches })
+    });
+    return res.json();
+  },
+  async clearMatches(tournament_id: string) {
+    const res = await fetch(`${API_URL}/matches?tournament_id=${tournament_id}`, {
+      method: 'DELETE'
     });
     return res.json();
   },

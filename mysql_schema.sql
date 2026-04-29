@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS tournaments (
   id VARCHAR(36) PRIMARY KEY,
   organizer_id VARCHAR(255) NOT NULL,
   max_teams INTEGER NOT NULL DEFAULT 8,
+  type VARCHAR(50) NOT NULL DEFAULT 'bracket', -- 'bracket', 'round_robin'
   status VARCHAR(50) NOT NULL DEFAULT 'registration', -- 'registration', 'in_progress', 'finished'
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
