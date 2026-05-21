@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Alert } from 'react-native';
-import { api, socket } from '../lib/api';
+import { api, realtime } from '../lib/api';
 import { Tournament, TournamentTeam, Match } from '../types/tournament';
 
 interface TournamentBracketScreenProps {
@@ -20,9 +20,7 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
   useEffect(() => {
     fetchInitialData();
 
-    socket.emit('join-tournament', tournamentId);
-
-    socket.on('tournament-update', (payload) => {
+    realtime.subscribe(`tournament:${tournamentId}`, (payload) => {
       if (payload.type === 'tournament-patch') {
         setTournament(prev => prev ? ({ ...prev, ...payload.data }) : null);
       } else if (payload.type === 'team-added' || payload.type === 'team-removed' || payload.type === 'team-updated') {
@@ -33,7 +31,7 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
     });
 
     return () => {
-      socket.off('tournament-update');
+      realtime.unsubscribe();
     };
   }, [tournamentId]);
 
@@ -84,103 +82,8 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
   const generateBracket = async () => {
     setStarting(true);
     try {
-      // 0. Force refresh of EVERYTHING before generating
-      const [latestTournament, latestTeams] = await Promise.all([
-        api.getTournament(tournamentId),
-        api.getTeams(tournamentId)
-      ]);
-      
-      setTournament(latestTournament);
-      setTeams(latestTeams);
-      
-      if (latestTeams.length < 2) {
-        alert("Il faut au moins 2 équipes pour lancer le concours.");
-        return;
-      }
-
-      console.log(`Generating ${latestTournament.type} for ${latestTeams.length} teams`);
-      
-      // 1. Clear existing matches
-      await api.clearMatches(tournamentId);
-
-      const shuffledTeams = [...latestTeams].sort(() => Math.random() - 0.5);
-      const matchEntries = [];
-
-      if (latestTournament.type === 'round_robin') {
-        // --- Round Robin Logic ---
-        // Formula: n * (n-1) / 2 matches. For 3 teams: 3*2/2 = 3 matches.
-        for (let i = 0; i < shuffledTeams.length; i++) {
-          for (let j = i + 1; j < shuffledTeams.length; j++) {
-            matchEntries.push({
-              tournament_id: tournamentId,
-              round: 0,
-              match_index: matchEntries.length,
-              team1_id: shuffledTeams[i].id,
-              team2_id: shuffledTeams[j].id,
-              status: 'waiting'
-            });
-          }
-        }
-        console.log(`RR: Created ${matchEntries.length} matches`);
-        await api.createMatchesBulk(matchEntries);
-      } else {
-        // --- Bracket Logic ---
-        const actualTeamCount = shuffledTeams.length;
-        const bracketSize = Math.pow(2, Math.ceil(Math.log2(actualTeamCount)));
-        const numRounds = Math.log2(bracketSize);
-
-        for (let r = 0; r < numRounds; r++) {
-          const numMatchesInRound = Math.pow(2, numRounds - r - 1);
-          for (let i = 0; i < numMatchesInRound; i++) {
-            matchEntries.push({
-              tournament_id: tournamentId,
-              round: r,
-              match_index: i,
-              team1_id: null,
-              team2_id: null,
-              status: 'waiting'
-            });
-          }
-        }
-
-        const createdMatches = await api.createMatchesBulk(matchEntries);
-        const firstRoundMatches = (createdMatches || []).filter((m: any) => m.round === 0).sort((a: any, b: any) => a.match_index - b.match_index);
-        
-        for (let i = 0; i < firstRoundMatches.length; i++) {
-          const match = firstRoundMatches[i];
-          const team1 = shuffledTeams[i * 2] || null;
-          const team2 = shuffledTeams[i * 2 + 1] || null;
-
-          if (team1 && !team2) {
-            await api.updateMatch(match.id, {
-              team1_id: team1.id,
-              team2_id: null,
-              winner_id: team1.id,
-              status: 'finished',
-              tournament_id: tournamentId
-            });
-
-            const nextMatchIndex = Math.floor(match.match_index / 2);
-            const isTeam1 = match.match_index % 2 === 0;
-            const nextMatch = (createdMatches || []).find((m: any) => m.round === 1 && m.match_index === nextMatchIndex);
-            if (nextMatch) {
-              await api.updateMatch(nextMatch.id, {
-                [isTeam1 ? 'team1_id' : 'team2_id']: team1.id,
-                tournament_id: tournamentId
-              });
-            }
-          } else {
-            await api.updateMatch(match.id, {
-              team1_id: team1?.id || null,
-              team2_id: team2?.id || null,
-              tournament_id: tournamentId
-            });
-          }
-        }
-      }
-
-      await api.updateTournament(tournamentId, { status: 'in_progress' });
-      await fetchMatches();
+      await api.generateTournament(tournamentId);
+      await fetchInitialData();
     } catch (error) {
       console.error('Error starting tournament:', error);
       alert('Erreur lors du lancement');
@@ -192,50 +95,9 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
   const handleManualFinish = async (matchId: string, winnerId: string) => {
     try {
       setLoading(true);
-      console.log('Manual finish for match:', matchId, 'winner:', winnerId);
-      
-      // 1. Get match details
-      const allMatches = await api.getMatches(tournamentId);
-      const match = allMatches.find((m: Match) => m.id === matchId);
-      if (!match) return;
-
-      // 2. Update current match
-      await api.updateMatch(matchId, {
-        status: 'finished',
-        winner_id: winnerId,
-        team1_score: winnerId === match.team1_id ? 13 : 0,
-        team2_score: winnerId === match.team2_id ? 13 : 0,
-        tournament_id: tournamentId
-      });
-
-      // 3. Handle progression
-      if (tournament?.type === 'bracket') {
-        const nextRound = match.round + 1;
-        const nextMatchIndex = Math.floor(match.match_index / 2);
-        const isTeam1Slot = match.match_index % 2 === 0;
-
-        const nextMatch = allMatches.find((m: Match) => m.round === nextRound && m.match_index === nextMatchIndex);
-
-        if (nextMatch) {
-          await api.updateMatch(nextMatch.id, {
-            [isTeam1Slot ? 'team1_id' : 'team2_id']: winnerId,
-            tournament_id: tournamentId
-          });
-        } else {
-          const maxRound = Math.max(...allMatches.map((m: Match) => m.round));
-          if (match.round === maxRound) {
-            await api.updateTournament(tournamentId, { status: 'finished' });
-          }
-        }
-      } else {
-        // Round Robin: Check if all finished
-        const allFinished = allMatches.every((m: Match) => m.id === matchId ? true : m.status === 'finished');
-        if (allFinished) {
-          await api.updateTournament(tournamentId, { status: 'finished' });
-        }
-      }
-      
+      await api.finishMatch(matchId, winnerId);
       await fetchMatches();
+      await fetchTournament(); // Tournament status might have changed
     } catch (error) {
       console.error('Error manual finishing:', error);
       alert('Erreur lors de la validation');

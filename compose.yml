@@ -3,32 +3,56 @@ services:
   mysql:
     image: mysql:8.0
     container_name: petanque-db
-    restart: always
+    restart: "no"
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: petanque
     ports:
       - "3306:3306"
-    volumes:
-      - ./mysql_schema.sql:/docker-entrypoint-initdb.d/schema.sql
     networks:
       - petanque-net
 
-  # API Backend
-  api:
+  # Symfony 8 API Backend
+  symfony-api:
     build:
-      context: ./server
-    container_name: petanque-api
-    restart: always
+      context: ./symfony-api
+    container_name: petanque-symfony-api
+    restart: "no"
     ports:
-      - "3000:3000"
+      - "8000:8000"
+    volumes:
+      - ./symfony-api:/var/www/html
     environment:
-      - DB_HOST=mysql
-      - DB_USER=root
-      - DB_PASSWORD=root
-      - DB_NAME=petanque
+      - DATABASE_URL=mysql://root:root@mysql:3306/petanque?serverVersion=8.0.32&charset=utf8mb4
+      - APP_ENV=dev
+      - APP_SECRET=abcdef123456
+      - MERCURE_URL=http://mercure/.well-known/mercure
+      - MERCURE_PUBLIC_URL=http://localhost:3001/.well-known/mercure
+      - MERCURE_JWT_SECRET=!ChangeThisMercureHubFreeCommunitySecretKey!
     depends_on:
       - mysql
+    networks:
+      - petanque-net
+
+  # Adminer (DB Management)
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+    networks:
+      - petanque-net
+
+  # Mercure Hub (Realtime)
+  mercure:
+    image: dunglas/mercure
+    restart: unless-stopped
+    environment:
+      - MERCURE_PUBLISHER_JWT_KEY=!ChangeThisMercureHubFreeCommunitySecretKey!
+      - MERCURE_SUBSCRIBER_JWT_KEY=!ChangeThisMercureHubFreeCommunitySecretKey!
+      - MERCURE_CORS_ALLOWED_ORIGINS=*
+    ports:
+      - "3001:80"
     networks:
       - petanque-net
 

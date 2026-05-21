@@ -1,8 +1,41 @@
 import io from 'socket.io-client';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+const MERCURE_URL = process.env.EXPO_PUBLIC_MERCURE_URL || 'http://localhost:3001/.well-known/mercure';
 
-export const socket = io(API_URL);
+class RealtimeClient {
+  private eventSource: EventSource | null = null;
+  private listeners: Set<(data: any) => void> = new Set();
+
+  subscribe(topic: string, callback: (data: any) => void) {
+    const url = new URL(MERCURE_URL);
+    url.searchParams.append('topic', topic);
+    
+    this.eventSource = new EventSource(url.toString());
+    this.eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      callback(data);
+    };
+  }
+
+  unsubscribe() {
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+  }
+}
+
+export const realtime = new RealtimeClient();
+
+// Legacy socket mock for compatibility or gradual migration
+export const socket = {
+  emit: () => {},
+  on: (event: string, callback: any) => {
+    // We'll handle this in the screens directly with the new realtime client
+  },
+  off: () => {}
+};
 
 export const api = {
   async getTournament(id: string) {
@@ -78,6 +111,20 @@ export const api = {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
+    });
+    return res.json();
+  },
+  async generateTournament(id: string) {
+    const res = await fetch(`${API_URL}/tournaments/${id}/generate`, {
+      method: 'POST'
+    });
+    return res.json();
+  },
+  async finishMatch(id: string, winner_id: string) {
+    const res = await fetch(`${API_URL}/matches/${id}/finish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ winner_id })
     });
     return res.json();
   }
