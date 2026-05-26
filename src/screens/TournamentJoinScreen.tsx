@@ -22,8 +22,20 @@ export default function TournamentJoinScreen({ userId, tournamentId, onJoined, o
 
   const fetchTournament = async () => {
     try {
-      const data = await api.getTournament(tournamentId);
+      const [data, teams] = await Promise.all([
+        api.getTournament(tournamentId),
+        api.getTeams(tournamentId)
+      ]);
+      
       setTournament(data);
+
+      // If user already has a team, skip join screen
+      const existingTeam = teams.find((t: any) => t.creator_id === userId);
+      if (existingTeam) {
+        console.log('User already in tournament, redirecting...');
+        onJoined(tournamentId);
+        return;
+      }
     } catch (error) {
       console.error('Error fetching tournament:', error);
       alert('Concours introuvable');

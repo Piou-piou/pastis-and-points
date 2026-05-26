@@ -25,7 +25,9 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
         setTournament(prev => prev ? ({ ...prev, ...payload.data }) : null);
       } else if (payload.type === 'team-added' || payload.type === 'team-removed' || payload.type === 'team-updated') {
         fetchTeams();
-      } else if (payload.type === 'matches-created' || payload.type === 'match-updated') {
+      } else if (payload.type === 'matches-created') {
+        fetchInitialData(); // Full refresh to get new status AND matches
+      } else if (payload.type === 'match-updated') {
         fetchMatches();
       }
     });

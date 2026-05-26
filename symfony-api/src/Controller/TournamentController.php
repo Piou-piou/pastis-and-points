@@ -59,6 +59,30 @@ class TournamentController extends AbstractController
         ], Response::HTTP_CREATED);
     }
 
+    #[Route('/my-tournaments/{userId}', name: 'get_user_tournaments', methods: ['GET'])]
+    public function getTournamentsByUser(string $userId): JsonResponse
+    {
+        $tournaments = $this->entityManager->getRepository(Tournament::class)->findBy(
+            ['organizerId' => $userId],
+            ['createdAt' => 'DESC']
+        );
+
+        $result = [];
+        foreach ($tournaments as $t) {
+            $result[] = [
+                'id' => $t->getId(),
+                'organizer_id' => $t->getOrganizerId(),
+                'max_teams' => $t->getMaxTeams(),
+                'type' => $t->getType(),
+                'status' => $t->getStatus(),
+                'created_at' => $t->getCreatedAt()->format(\DateTimeInterface::ATOM),
+                'team_count' => count($t->getTeams()),
+            ];
+        }
+
+        return $this->json($result);
+    }
+
     #[Route('/tournaments/{id}', name: 'get_tournament', methods: ['GET'])]
     public function getTournament(string $id): JsonResponse
     {
@@ -214,6 +238,28 @@ class TournamentController extends AbstractController
         return $this->json($result);
     }
 
+    #[Route('/matches/{id}', name: 'get_match', methods: ['GET'])]
+    public function getMatch(string $id): JsonResponse
+    {
+        $match = $this->entityManager->getRepository(TournamentMatch::class)->find($id);
+        if (!$match) return $this->json(['error' => 'Not found'], 404);
+
+        return $this->json([
+            'id' => $match->getId(),
+            'tournament_id' => $match->getTournament()->getId(),
+            'round' => $match->getRound(),
+            'match_index' => $match->getMatchIndex(),
+            'team1_id' => $match->getTeam1()?->getId(),
+            'team2_id' => $match->getTeam2()?->getId(),
+            'team1_name' => $match->getTeam1()?->getName(),
+            'team2_name' => $match->getTeam2()?->getName(),
+            'team1_score' => $match->getTeam1Score(),
+            'team2_score' => $match->getTeam2Score(),
+            'winner_id' => $match->getWinner()?->getId(),
+            'status' => $match->getStatus(),
+        ]);
+    }
+
     #[Route('/matches', name: 'clear_matches', methods: ['DELETE'])]
     public function clearMatches(Request $request): JsonResponse
     {
@@ -354,6 +400,11 @@ class TournamentController extends AbstractController
 
         $tournament->setStatus('in_progress');
         $this->entityManager->flush();
+
+        $this->notify("tournament:$id", [
+            'type' => 'tournament-patch',
+            'data' => ['status' => 'in_progress']
+        ]);
 
         $this->notify("tournament:$id", [
             'type' => 'matches-created',

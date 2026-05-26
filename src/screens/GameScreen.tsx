@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator } from 'react-native';
 import { GameMode, Team } from '../types/game';
-import { api, socket } from '../lib/api';
+import { api, realtime } from '../lib/api';
 import { Match } from '../types/tournament';
 
 interface GameScreenProps {
@@ -47,10 +47,8 @@ export default function GameScreen({ userId, mode, onQuit, matchId, onMatchFinis
     if (matchId) {
       fetchMatchDetails();
       
-      socket.emit('join-match', matchId);
-      
-      socket.on('match-update', (payload) => {
-        if (payload.type === 'match-updated') {
+      realtime.subscribe(`tournament:${matchData?.tournament_id || ''}`, (payload) => {
+        if (payload.type === 'match-updated' && payload.data.id === matchId) {
           const updatedMatch = payload.data;
           setMatchData(prev => prev ? ({ ...prev, ...updatedMatch }) : null);
           
@@ -79,15 +77,15 @@ export default function GameScreen({ userId, mode, onQuit, matchId, onMatchFinis
       });
 
       return () => {
-        socket.off('match-update');
+        realtime.unsubscribe();
       };
     }
-  }, [matchId]);
+  }, [matchId, matchData?.tournament_id]);
 
   const fetchMatchDetails = async () => {
+    if (!matchId) return;
     try {
-      const match = await (await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'}/matches-single/${matchId}`)).json();
-
+      const match = await api.getMatch(matchId);
       setMatchData(match);
       
       setRedTeam(prev => ({ 
@@ -102,7 +100,7 @@ export default function GameScreen({ userId, mode, onQuit, matchId, onMatchFinis
       }));
 
       if (match.status === 'waiting') {
-        await api.updateMatch(matchId!, { status: 'in_progress' });
+        await api.updateMatch(matchId, { status: 'in_progress' });
       }
     } catch (error) {
       console.error('Error fetching match details:', error);
@@ -127,66 +125,9 @@ export default function GameScreen({ userId, mode, onQuit, matchId, onMatchFinis
 
   const finishMatch = async (winnerId: string | null) => {
     setLoading(true);
-    console.log('--- START finishMatch ---');
-    
     try {
-      // 1. Re-fetch current match one last time to be 100% sure of IDs
-      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'}/matches-single/${matchId}`);
-      const freshMatchData = await res.json();
-      
-      let finalWinnerId = winnerId;
-      if (!finalWinnerId && isGameOver) {
-        // Fallback calculation if winnerId was somehow lost
-        finalWinnerId = redTeam.totalScore >= WINNING_SCORE ? freshMatchData.team1_id : freshMatchData.team2_id;
-      }
-
-      console.log('Final Winner ID:', finalWinnerId);
-
-      // 2. Mark current match as finished
-      await api.updateMatch(matchId!, {
-        status: 'finished',
-        winner_id: finalWinnerId,
-        team1_score: redTeam.totalScore,
-        team2_score: blueTeam.totalScore,
-        tournament_id: freshMatchData.tournament_id
-      });
-
-      // 3. Handle progression
-      if (finalWinnerId && freshMatchData.tournament_id) {
-        // Fetch tournament to check type
-        const tournament = await api.getTournament(freshMatchData.tournament_id);
-        
-        if (tournament.type === 'bracket') {
-          const nextRound = (freshMatchData.round || 0) + 1;
-          const nextMatchIndex = Math.floor((freshMatchData.match_index || 0) / 2);
-          const isTeam1Slot = (freshMatchData.match_index || 0) % 2 === 0;
-
-          const allMatches = await api.getMatches(freshMatchData.tournament_id);
-          const nextMatch = allMatches.find((m: Match) => m.round === nextRound && m.match_index === nextMatchIndex);
-
-          if (nextMatch) {
-            console.log(`Propelling ${finalWinnerId} to next match ${nextMatch.id}`);
-            await api.updateMatch(nextMatch.id, {
-              [isTeam1Slot ? 'team1_id' : 'team2_id']: finalWinnerId
-            });
-          } else {
-            // Final match logic
-            const maxRound = Math.max(...allMatches.map((m: Match) => m.round));
-            if (freshMatchData.round === maxRound) {
-              await api.updateTournament(freshMatchData.tournament_id, { status: 'finished' });
-            }
-          }
-        } else {
-          // Round Robin: Just check if all matches are finished to end tournament
-          const allMatches = await api.getMatches(freshMatchData.tournament_id);
-          const allFinished = allMatches.every((m: Match) => m.status === 'finished');
-          if (allFinished) {
-            await api.updateTournament(freshMatchData.tournament_id, { status: 'finished' });
-          }
-        }
-      }
-
-      console.log('--- END finishMatch SUCCESS ---');
+      // winnerId is already calculated in the calling function
+      await api.finishMatch(matchId!, winnerId!);
       if (onMatchFinish) onMatchFinish();
     } catch (error) {
       console.error('Error in finishMatch:', error);

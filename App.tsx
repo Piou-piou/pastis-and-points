@@ -8,26 +8,85 @@ import GameScreen from './src/screens/GameScreen';
 import TournamentSetupScreen from './src/screens/TournamentSetupScreen';
 import TournamentJoinScreen from './src/screens/TournamentJoinScreen';
 import TournamentBracketScreen from './src/screens/TournamentBracketScreen';
+import AuthScreen from './src/screens/AuthScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
+import MyTournamentsScreen from './src/screens/MyTournamentsScreen';
 import { GameMode } from './src/types/game';
 import * as Linking from 'expo-linking';
 
-type Screen = 'splash' | 'home' | 'game' | 'tournament_setup' | 'tournament_join' | 'tournament_bracket';
+type Screen = 'splash' | 'home' | 'game' | 'tournament_setup' | 'tournament_join' | 'tournament_bracket' | 'auth' | 'profile' | 'my_tournaments';
 const TOURNAMENT_ID_KEY = '@pastis_tournament_id';
 const USER_ID_KEY = '@pastis_user_id';
+const AUTH_USER_KEY = '@pastis_auth_user';
+const CURRENT_SCREEN_KEY = '@pastis_current_screen';
+const MATCH_ID_KEY = '@pastis_match_id';
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>('splash');
+  const [currentScreen, _setCurrentScreen] = useState<Screen>('splash');
   const [gameMode, setGameMode] = useState<GameMode>('1vs1');
   const [tournamentId, setTournamentId] = useState<string | null>(null);
-  const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
+  const [currentMatchId, _setCurrentMatchId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string>('');
+  const [authUser, setAuthUser] = useState<{ id: string, email: string, name?: string | null } | null>(null);
   const [initializing, setInitializing] = useState(true);
+
+  // Wrapper to persist screen state
+  const setCurrentScreen = async (screen: Screen) => {
+    _setCurrentScreen(screen);
+    try {
+      await AsyncStorage.setItem(CURRENT_SCREEN_KEY, screen);
+    } catch (e) {}
+  };
+
+  // Wrapper to persist match ID
+  const setCurrentMatchId = async (id: string | null) => {
+    _setCurrentMatchId(id);
+    try {
+      if (id) await AsyncStorage.setItem(MATCH_ID_KEY, id);
+      else await AsyncStorage.removeItem(MATCH_ID_KEY);
+    } catch (e) {}
+  };
 
   useEffect(() => {
     const init = async () => {
-      await loadTournament();
+      const [savedId, savedScreen, savedMatchId, savedAuthUser] = await Promise.all([
+        AsyncStorage.getItem(TOURNAMENT_ID_KEY),
+        AsyncStorage.getItem(CURRENT_SCREEN_KEY),
+        AsyncStorage.getItem(MATCH_ID_KEY),
+        AsyncStorage.getItem(AUTH_USER_KEY)
+      ]);
+
+      if (savedAuthUser) {
+        try {
+          setAuthUser(JSON.parse(savedAuthUser));
+        } catch (e) {}
+      }
+
+      const initialURL = await Linking.getInitialURL();
+      let startScreen: Screen = (savedScreen as Screen) || 'home';
+      let idToUse = savedId;
+
+      if (initialURL) {
+        const { queryParams } = Linking.parse(initialURL);
+        if (queryParams?.tournamentId) {
+          idToUse = queryParams.tournamentId as string;
+          startScreen = 'tournament_join';
+          await AsyncStorage.setItem(TOURNAMENT_ID_KEY, idToUse);
+        }
+      }
+
+      if (!initialURL && idToUse && (!savedScreen || savedScreen === 'home')) {
+        startScreen = 'tournament_bracket';
+      }
+
+      setTournamentId(idToUse);
+      _setCurrentMatchId(savedMatchId);
       await initUserId();
+      
       setInitializing(false);
+      if (startScreen !== 'splash') {
+        setCurrentScreen(startScreen);
+      }
     };
     init();
     
@@ -39,52 +98,41 @@ export default function App() {
       }
     };
 
-    const getInitialURL = async () => {
-      const initialURL = await Linking.getInitialURL();
-      if (initialURL) {
-        handleDeepLink({ url: initialURL });
-      }
-    };
-
-    getInitialURL();
     const subscription = Linking.addEventListener('url', handleDeepLink);
     return () => subscription.remove();
   }, []);
 
-  const loadTournament = async () => {
-    try {
-      const savedId = await AsyncStorage.getItem(TOURNAMENT_ID_KEY);
-      if (savedId) {
-        setTournamentId(savedId);
-      }
-    } catch (e) {
-      console.error('Failed to load tournament ID', e);
-    }
-  };
-
   const initUserId = async () => {
     try {
-      const isWeb = typeof window !== 'undefined' && window.sessionStorage;
-      let id: string | null = null;
-
-      if (isWeb) {
-        id = window.sessionStorage.getItem(USER_ID_KEY);
-      } else {
-        id = await AsyncStorage.getItem(USER_ID_KEY);
-      }
+      let id = await AsyncStorage.getItem(USER_ID_KEY);
 
       if (!id) {
         id = Math.random().toString(36).substring(2) + Date.now().toString(36);
-        if (isWeb) {
-          window.sessionStorage.setItem(USER_ID_KEY, id);
-        } else {
-          await AsyncStorage.setItem(USER_ID_KEY, id);
-        }
+        await AsyncStorage.setItem(USER_ID_KEY, id);
       }
       setUserId(id);
     } catch (e) {
       console.error('Failed to handle userId', e);
     }
+  };
+
+  const handleAuthSuccess = async (user: { id: string, email: string, name?: string | null }) => {
+    setAuthUser(user);
+    await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    if (currentScreen === 'auth') {
+      setCurrentScreen('tournament_setup');
+    }
+  };
+
+  const handleProfileUpdate = async (user: { id: string, email: string, name?: string | null }) => {
+    setAuthUser(user);
+    await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  };
+
+  const handleLogout = async () => {
+    setAuthUser(null);
+    await AsyncStorage.removeItem(AUTH_USER_KEY);
+    setCurrentScreen('home');
   };
 
   const saveTournament = async (id: string | null) => {
@@ -116,6 +164,8 @@ export default function App() {
   };
 
   const handleSplashFinish = () => {
+    if (currentScreen !== 'splash') return;
+
     if (tournamentId) {
       setCurrentScreen('tournament_bracket');
     } else {
@@ -124,7 +174,11 @@ export default function App() {
   };
 
   const handleCreateTournament = () => {
-    setCurrentScreen('tournament_setup');
+    if (authUser) {
+      setCurrentScreen('tournament_setup');
+    } else {
+      setCurrentScreen('auth');
+    }
   };
 
   const handleTournamentCreated = (id: string) => {
@@ -138,6 +192,11 @@ export default function App() {
   };
 
   const handleTournamentJoined = (id: string) => {
+    saveTournament(id);
+    setCurrentScreen('tournament_bracket');
+  };
+
+  const handleSelectTournament = (id: string) => {
     saveTournament(id);
     setCurrentScreen('tournament_bracket');
   };
@@ -170,11 +229,17 @@ export default function App() {
           onStartGame={handleStartGame} 
           onCreateTournament={handleCreateTournament}
           onJoinTournament={(id) => handleJoinTournament(id)}
+          authUser={authUser}
+          onOpenProfile={() => setCurrentScreen('profile')}
+          onOpenMyTournaments={() => {
+            if (authUser) setCurrentScreen('my_tournaments');
+            else setCurrentScreen('auth');
+          }}
         />
       )}
       {currentScreen === 'game' && (
         <GameScreen 
-          userId={userId}
+          userId={authUser?.id || userId}
           mode={gameMode} 
           onQuit={handleQuitGame} 
           matchId={currentMatchId}
@@ -183,22 +248,43 @@ export default function App() {
       )}
       {currentScreen === 'tournament_setup' && (
         <TournamentSetupScreen 
-          userId={userId}
+          userId={authUser?.id || userId}
           onCreated={handleTournamentCreated}
+          onBack={() => setCurrentScreen('home')}
+        />
+      )}
+      {currentScreen === 'auth' && (
+        <AuthScreen 
+          onAuthSuccess={handleAuthSuccess}
+          onBack={() => setCurrentScreen('home')}
+        />
+      )}
+      {currentScreen === 'profile' && authUser && (
+        <ProfileScreen 
+          user={authUser}
+          onUpdate={handleProfileUpdate}
+          onLogout={handleLogout}
+          onBack={() => setCurrentScreen('home')}
+        />
+      )}
+      {currentScreen === 'my_tournaments' && authUser && (
+        <MyTournamentsScreen 
+          userId={authUser.id}
+          onSelectTournament={handleSelectTournament}
           onBack={() => setCurrentScreen('home')}
         />
       )}
       {currentScreen === 'tournament_join' && (
         <TournamentJoinScreen 
-          userId={userId}
+          userId={authUser?.id || userId}
           tournamentId={tournamentId!}
           onJoined={handleTournamentJoined}
-          onBack={() => setCurrentScreen('home')}
+          onBack={handleQuitTournament}
         />
       )}
       {currentScreen === 'tournament_bracket' && (
         <TournamentBracketScreen 
-          userId={userId}
+          userId={authUser?.id || userId}
           tournamentId={tournamentId!}
           onLaunchMatch={handleLaunchMatch}
           onBack={handleQuitTournament}

@@ -38,8 +38,48 @@ export const socket = {
 };
 
 export const api = {
+  async login(email: string, password: string) {
+    const res = await fetch(`${API_URL}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || 'Login failed');
+    }
+    return res.json();
+  },
+  async register(email: string, password: string) {
+    const res = await fetch(`${API_URL}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || 'Registration failed');
+    }
+    return res.json();
+  },
+  async updateProfile(id: string, updates: { name?: string, email?: string, password?: string }) {
+    const res = await fetch(`${API_URL}/profile/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || 'Update failed');
+    }
+    return res.json();
+  },
   async getTournament(id: string) {
     const res = await fetch(`${API_URL}/tournaments/${id}`);
+    return res.json();
+  },
+  async getMyTournaments(userId: string) {
+    const res = await fetch(`${API_URL}/my-tournaments/${userId}`);
     return res.json();
   },
   async createTournament(organizer_id: string, max_teams: number, type: string = 'bracket') {
@@ -90,6 +130,10 @@ export const api = {
   },
   async getMatches(tournament_id: string) {
     const res = await fetch(`${API_URL}/matches?tournament_id=${tournament_id}`);
+    return res.json();
+  },
+  async getMatch(id: string) {
+    const res = await fetch(`${API_URL}/matches/${id}`);
     return res.json();
   },
   async createMatchesBulk(matches: any[]) {
