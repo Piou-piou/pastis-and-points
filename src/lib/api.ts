@@ -164,6 +164,12 @@ export const api = {
     });
     return res.json();
   },
+  async finishTournament(id: string) {
+    const res = await fetch(`${API_URL}/tournaments/${id}/finish`, {
+      method: 'POST'
+    });
+    return res.json();
+  },
   async finishMatch(id: string, winner_id: string) {
     const res = await fetch(`${API_URL}/matches/${id}/finish`, {
       method: 'POST',

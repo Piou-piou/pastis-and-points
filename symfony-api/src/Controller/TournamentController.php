@@ -123,6 +123,23 @@ class TournamentController extends AbstractController
         return $this->json(['id' => $tournament->getId(), 'status' => $tournament->getStatus()]);
     }
 
+    #[Route('/tournaments/{id}/finish', name: 'finish_tournament', methods: ['POST'])]
+    public function finishTournament(string $id): JsonResponse
+    {
+        $tournament = $this->entityManager->getRepository(Tournament::class)->find($id);
+        if (!$tournament) return $this->json(['error' => 'Tournament not found'], 404);
+
+        $tournament->setStatus('finished');
+        $this->entityManager->flush();
+
+        $this->notify("tournament:$id", [
+            'type' => 'tournament-patch',
+            'data' => ['status' => 'finished']
+        ]);
+
+        return $this->json(['success' => true]);
+    }
+
     #[Route('/teams', name: 'get_teams', methods: ['GET'])]
     public function getTeams(Request $request): JsonResponse
     {

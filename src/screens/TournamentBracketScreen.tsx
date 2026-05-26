@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Alert, Platform } from 'react-native';
 import { api, realtime } from '../lib/api';
 import { Tournament, TournamentTeam, Match } from '../types/tournament';
 
@@ -108,6 +108,38 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
     }
   };
 
+  const handleFinishTournament = () => {
+    const confirmMessage = 'Êtes-vous sûr de vouloir clôturer ce concours maintenant ? Plus aucun score ne pourra être modifié.';
+    
+    const executeFinish = async () => {
+      try {
+        setLoading(true);
+        await api.finishTournament(tournamentId);
+        await fetchInitialData(); // Re-fetch everything
+      } catch (error) {
+        console.error('Error finishing tournament:', error);
+        alert('Erreur lors de la clôture');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMessage)) {
+        executeFinish();
+      }
+    } else {
+      Alert.alert(
+        'Terminer le concours',
+        confirmMessage,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Terminer', style: 'destructive', onPress: executeFinish }
+        ]
+      );
+    }
+  };
+
   const getWinner = () => {
     if (tournament?.status !== 'finished') return null;
     const numRounds = Math.ceil(Math.log2(tournament?.max_teams || 2));
@@ -177,9 +209,16 @@ export default function TournamentBracketScreen({ userId, tournamentId, onLaunch
           </Text>
           <Text style={{ color: '#666', fontSize: 10 }}>ID: {userId.substring(0, 8)} {tournament?.organizer_id === userId ? '(Admin)' : '(Joueur)'}</Text>
         </View>
-        <TouchableOpacity onPress={fetchInitialData} style={styles.refreshButton}>
-          <Text style={styles.refreshText}>🔄</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {tournament?.organizer_id === userId && (
+            <TouchableOpacity onPress={handleFinishTournament} style={styles.finishEarlyButton}>
+              <Text style={styles.finishEarlyText}>Terminer</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={fetchInitialData} style={styles.refreshButton}>
+            <Text style={styles.refreshText}>🔄</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -438,6 +477,19 @@ const styles = StyleSheet.create({
   },
   refreshText: {
     fontSize: 20,
+  },
+  finishEarlyButton: {
+    backgroundColor: 'rgba(230, 57, 70, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E63946',
+  },
+  finishEarlyText: {
+    color: '#E63946',
+    fontSize: 12,
+    fontWeight: '700',
   },
   headerTitle: {
     color: '#FFF',
