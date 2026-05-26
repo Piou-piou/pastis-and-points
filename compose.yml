@@ -1,18 +1,62 @@
 services:
-  pastis-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: pastis-and-points
-    restart: always
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: petanque-db
+    restart: "no"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: petanque
+    ports:
+      - "3306:3306"
     networks:
-      - proxy
-    labels:
-      - "traefik.enable=true"
-      # Remplacez 'pastis.votre-domaine.com' par votre URL réelle
-      - "traefik.http.routers.pastis.rule=Host(`pastis.dev-up.app`)"
-      - "traefik.http.routers.pastis.entrypoints=https"
+      - petanque-net
+
+  # Symfony 8 API Backend
+  symfony-api:
+    build:
+      context: ./symfony-api
+    container_name: petanque-symfony-api
+    restart: "no"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./symfony-api:/var/www/html
+    environment:
+      - DATABASE_URL=mysql://root:root@mysql:3306/petanque?serverVersion=8.0.32&charset=utf8mb4
+      - APP_ENV=dev
+      - APP_SECRET=abcdef123456
+      - MERCURE_URL=http://mercure/.well-known/mercure
+      - MERCURE_PUBLIC_URL=http://localhost:3001/.well-known/mercure
+      - MERCURE_JWT_SECRET=!ChangeThisMercureHubFreeCommunitySecretKey!
+    depends_on:
+      - mysql
+    networks:
+      - petanque-net
+
+  # Adminer (DB Management)
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+    networks:
+      - petanque-net
+
+  # Mercure Hub (Realtime)
+  mercure:
+    image: dunglas/mercure
+    restart: unless-stopped
+    environment:
+      - SERVER_NAME=:80
+      - MERCURE_PUBLISHER_JWT_KEY=!ChangeThisMercureHubFreeCommunitySecretKey!
+      - MERCURE_SUBSCRIBER_JWT_KEY=!ChangeThisMercureHubFreeCommunitySecretKey!
+      - MERCURE_CORS_ALLOWED_ORIGINS=*
+    ports:
+      - "3001:80"
+    networks:
+      - petanque-net
 
 networks:
-  proxy:
-    external: true
+  petanque-net:
+    driver: bridge
